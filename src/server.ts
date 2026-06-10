@@ -5,10 +5,12 @@ import { listSessions, getSession, getAnalytics, listReposWithScores, getRepoSco
 import { clearCache } from "./cache";
 import { SearchIndex } from "./search";
 import { getTokenUsage, type TokenSourceFilter } from "./token-usage";
+import { listBookmarks, getBookmark, upsertBookmark, deleteBookmark, getBookmarkMap, listAllTags } from "./bookmarks";
 
 export function createApp() {
   const app = express();
   app.use(cors());
+  app.use(express.json());
 
   const searchIndex = new SearchIndex();
 
@@ -38,11 +40,56 @@ export function createApp() {
     }
   });
 
-  // API: List all sessions
+  // API: Bookmarks — list all
+  app.get("/api/bookmarks", (_req, res) => {
+    try {
+      res.json(listBookmarks());
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // API: Bookmarks — list all existing tag values (for auto-suggest)
+  app.get("/api/bookmarks/tags", (_req, res) => {
+    try {
+      res.json(listAllTags());
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // API: Bookmarks — upsert
+  app.put("/api/bookmarks/:id", (req, res) => {
+    try {
+      const { id } = req.params;
+      const tags: string[] = Array.isArray(req.body?.tags) ? req.body.tags : [];
+      const note: string = typeof req.body?.note === "string" ? req.body.note : "";
+      res.json(upsertBookmark(id, tags, note));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // API: Bookmarks — delete
+  app.delete("/api/bookmarks/:id", (req, res) => {
+    try {
+      const removed = deleteBookmark(req.params.id);
+      res.json({ ok: removed });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // API: List all sessions (with bookmarked flag + tags injected)
   app.get("/api/sessions", (_req, res) => {
     try {
       const sessions = listSessions();
-      res.json(sessions);
+      const bm = getBookmarkMap();
+      const enriched = sessions.map((s) => {
+        const b = bm.get(s.id);
+        return b ? { ...s, bookmarked: true, tags: b.tags } : s;
+      });
+      res.json(enriched);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -78,10 +125,12 @@ export function createApp() {
         if (e.type === "user.message") messages.push({ role: "user", content });
         else if (e.type === "assistant.message") messages.push({ role: "assistant", content });
       }
+      const bookmark = getBookmark(session.id);
       const line = JSON.stringify({
         session_id: session.id,
         source: session.source,
         created_at: session.createdAt,
+        ...(bookmark ? { tags: bookmark.tags, note: bookmark.note } : {}),
         messages,
       });
       res.setHeader("Content-Type", "application/x-ndjson");
