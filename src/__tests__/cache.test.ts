@@ -61,7 +61,7 @@ describe("cachedCall", () => {
     }
     cachedCall("newest", 1000, () => "newest-value");
 
-    expect(cache).toHaveLength(MAX_ENTRIES);
+    expect(cache.size).toBe(MAX_ENTRIES);
     expect(cache.has("key-0")).toBe(false);
     expect(cache.get("newest")?.value).toBe("newest-value");
   });
@@ -87,7 +87,7 @@ describe("cachedCall", () => {
     }
     cachedCall("key-0", 1000, () => "refreshed");
 
-    expect(cache).toHaveLength(MAX_ENTRIES);
+    expect(cache.size).toBe(MAX_ENTRIES);
     expect(cache.has("key-1")).toBe(true);
     expect(cache.get("key-0")?.value).toBe("refreshed");
   });
