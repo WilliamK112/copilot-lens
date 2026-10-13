@@ -389,6 +389,8 @@ function collectCopilotCli(): {
   const calls: TokenCall[] = [];
   for (const f of files) {
     try {
+      const stat = fs.statSync(f);
+      if (stat.size > 200 * 1024 * 1024) continue; // 200MB cap
       const content = fs.readFileSync(f, "utf-8");
       for (const c of parseLogContent(content)) calls.push(c);
     } catch {
