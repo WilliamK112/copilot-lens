@@ -43,6 +43,16 @@ $env:COPILOT_LENS_CACHE_TTL_MS = "5000"
 copilot-lens --open
 ```
 
+## Search API
+
+`GET /api/search?q=keyword&offset=20&limit=20` returns matches 21–40 as an array
+of search results. Ranking and source filtering happen before pagination.
+
+`limit` defaults to `20` and accepts integers from `1` to `100`; `offset` defaults
+to `0` and accepts non-negative safe integers. Query values must be decimal
+integers. Invalid or repeated pagination parameters return HTTP 400 with an
+`error` message. Offsets beyond the last match return an empty array.
+
 ## Features
 
 - **Search**: full-text across every session, with source/date/directory filters
