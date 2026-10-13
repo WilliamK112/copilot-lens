@@ -78,7 +78,8 @@ if (process.env.VITEST !== "true") {
         } else if (process.platform === "darwin") {
           execFile("open", [url]);
         } else {
-          execFile("xdg-open", [url]);
+          const { openLinuxBrowser } = await import("./cli-browser");
+          openLinuxBrowser(url);
         }
       }
     });
