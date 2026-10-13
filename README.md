@@ -52,6 +52,11 @@ copilot-lens --open
 - **Effectiveness Score**: 0 to 100 score per repo with improvement tips
 - **Export**: single-session OpenAI-style chat JSONL, suitable as SFT data
 
+For case-sensitive API queries, use `/api/search?q=HTTPServer&caseSensitive=true`.
+This preserves case when matching query tokens against message content, titles,
+and directories, and when choosing highlight snippets. Searches without this
+option remain case-insensitive.
+
 ### Sessions
 
 ![Unified session browser across Copilot CLI, VS Code Copilot Chat, and Claude Code](https://raw.githubusercontent.com/pavanvamsi3/copilot-lens/main/assets/copilot-lens-sessions-list.png?v=3)

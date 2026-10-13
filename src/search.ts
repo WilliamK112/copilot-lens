@@ -18,6 +18,7 @@ export interface SearchResult {
 export interface SearchOptions {
   limit?: number; // default 20
   source?: "cli" | "vscode" | "claude-code" | "all"; // default 'all'
+  caseSensitive?: boolean; // default false
 }
 
 function stripCodeBlocks(text: string): string {
@@ -27,13 +28,12 @@ function stripCodeBlocks(text: string): string {
   return text.replace(/```[\s\S]*?```/g, " ");
 }
 
-export function tokenize(query: string): string[] {
+export function tokenize(query: string, caseSensitive = false): string[] {
   return (
-    query
-      .toLowerCase()
+    (caseSensitive ? query : query.toLowerCase())
       // Splits the search query on one or more non-alphanumeric characters,
-      // converting the string into an array of lowercase tokens.
-      .split(/[^a-z0-9]+/)
+      // keeping token case when case-sensitive matching is requested.
+      .split(/[^a-z0-9]+/i)
       .filter((t) => t.length >= 2)
   );
 }
@@ -126,7 +126,8 @@ export class SearchIndex {
       }
     }
 
-    const tokens = tokenize(query);
+    const caseSensitive = options?.caseSensitive ?? false;
+    const tokens = tokenize(query, caseSensitive);
     if (tokens.length === 0) return [];
 
     const limit = options?.limit ?? 20;
@@ -137,7 +138,12 @@ export class SearchIndex {
     for (const entry of this.entries) {
       if (sourceFilter !== "all" && entry.source !== sourceFilter) continue;
 
-      const joinedContent = entry.content.join(" ").toLowerCase();
+      const rawContent = entry.content.join(" ");
+      const joinedContent = caseSensitive
+        ? rawContent
+        : rawContent.toLowerCase();
+      const title = caseSensitive ? entry.title : entry.title.toLowerCase();
+      const cwd = caseSensitive ? entry.cwd : entry.cwd.toLowerCase();
       const wordCount = joinedContent.split(/\s+/).filter(Boolean).length || 1;
 
       let score = 0;
@@ -155,20 +161,23 @@ export class SearchIndex {
         }
 
         // Title bonus
-        if (entry.title.toLowerCase().includes(token)) {
+        if (title.includes(token)) {
           score += 0.5;
         }
 
         // cwd bonus
-        if (entry.cwd.toLowerCase().includes(token)) {
+        if (cwd.includes(token)) {
           score += 0.2;
         }
       }
 
       if (score <= 0) continue;
 
-      const rawContent = entry.content.join(" ");
-      const highlights = this.extractHighlights(rawContent, tokens);
+      const highlights = this.extractHighlights(
+        rawContent,
+        tokens,
+        caseSensitive
+      );
 
       results.push({ entry, score, highlights });
     }
@@ -177,13 +186,17 @@ export class SearchIndex {
     return results.slice(0, limit);
   }
 
-  private extractHighlights(rawContent: string, tokens: string[]): string[] {
-    const lower = rawContent.toLowerCase();
+  private extractHighlights(
+    rawContent: string,
+    tokens: string[],
+    caseSensitive: boolean
+  ): string[] {
+    const searchable = caseSensitive ? rawContent : rawContent.toLowerCase();
     const windows: Array<[number, number]> = [];
 
     for (const token of tokens) {
       let idx = 0;
-      while ((idx = lower.indexOf(token, idx)) !== -1) {
+      while ((idx = searchable.indexOf(token, idx)) !== -1) {
         const start = Math.max(0, idx - 60);
         const end = Math.min(rawContent.length, idx + 60);
         windows.push([start, end]);
