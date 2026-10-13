@@ -17,6 +17,7 @@ export interface SearchResult {
 
 export interface SearchOptions {
   limit?: number; // default 20
+  offset?: number; // default 0, applied after ranking and source filtering
   source?: "cli" | "vscode" | "claude-code" | "all"; // default 'all'
 }
 
@@ -135,6 +136,7 @@ export class SearchIndex {
     if (tokens.length === 0) return [];
 
     const limit = options?.limit ?? 20;
+    const offset = options?.offset ?? 0;
     const sourceFilter = options?.source ?? "all";
 
     const results: SearchResult[] = [];
@@ -179,7 +181,7 @@ export class SearchIndex {
     }
 
     results.sort((a, b) => b.score - a.score);
-    return results.slice(0, limit);
+    return results.slice(offset, offset + limit);
   }
 
   private extractHighlights(rawContent: string, tokens: string[]): string[] {

@@ -48,6 +48,20 @@ function hostGuard(configuredHost?: string): express.RequestHandler {
   };
 }
 
+function parseSearchInteger(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number = Number.MAX_SAFE_INTEGER
+): number | null {
+  if (value === undefined) return fallback;
+  if (typeof value !== "string" || !/^\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= min && parsed <= max
+    ? parsed
+    : null;
+}
+
 export function createApp(options: AppOptions = {}) {
   const app = express();
   app.use(hostGuard(options.host));
@@ -74,7 +88,18 @@ export function createApp(options: AppOptions = {}) {
       const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
       const source =
         typeof req.query.source === "string" ? req.query.source : "all";
-      const limit = parseInt(req.query.limit as string) || 20;
+      const limit = parseSearchInteger(req.query.limit, 20, 1, 100);
+      const offset = parseSearchInteger(req.query.offset, 0, 0);
+      if (limit === null) {
+        return res
+          .status(400)
+          .json({ error: "limit must be an integer between 1 and 100" });
+      }
+      if (offset === null) {
+        return res
+          .status(400)
+          .json({ error: "offset must be a non-negative safe integer" });
+      }
 
       if (!q) return res.json([]);
 
@@ -83,6 +108,7 @@ export function createApp(options: AppOptions = {}) {
 
       const results = searchIndex.search(q, {
         limit,
+        offset,
         source: source as "cli" | "vscode" | "all",
       });
 
