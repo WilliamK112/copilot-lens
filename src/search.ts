@@ -29,13 +29,11 @@ function stripCodeBlocks(text: string): string {
 }
 
 export function tokenize(query: string, caseSensitive = false): string[] {
-  return (
-    (caseSensitive ? query : query.toLowerCase())
-      // Splits the search query on one or more non-alphanumeric characters,
-      // keeping token case when case-sensitive matching is requested.
-      .split(/[^a-z0-9]+/i)
-      .filter((t) => t.length >= 2)
-  );
+  const normalized = caseSensitive ? query : query.toLowerCase();
+  // Keep complete Unicode words in exact-case queries, including decomposed
+  // accents. Default queries retain the existing ASCII tokenization rules.
+  const delimiter = caseSensitive ? /[^\p{L}\p{N}\p{M}]+/u : /[^a-z0-9]+/;
+  return normalized.split(delimiter).filter((t) => t.length >= 2);
 }
 
 function trimToWordBoundary(text: string, start: number, end: number): string {

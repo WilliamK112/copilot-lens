@@ -26,6 +26,15 @@ const fixtures = [
     id: "highlight",
     content: "httpserver ".repeat(30) + "HTTPServer responds",
   },
+  { id: "unicode-upper", content: "École" },
+  { id: "unicode-lower", content: "école" },
+  { id: "unicode-title-upper", title: "École" },
+  { id: "unicode-title-lower", title: "école" },
+  { id: "unicode-cwd-upper", cwd: "/École" },
+  { id: "unicode-cwd-lower", cwd: "/école" },
+  { id: "decomposed-upper", content: "E\u0301cole" },
+  { id: "decomposed-lower", content: "e\u0301cole" },
+  { id: "unicode-number", content: "１２３" },
 ];
 const sessions: SessionMeta[] = fixtures.map((fixture) => ({
   id: fixture.id,
@@ -80,6 +89,46 @@ afterAll(
 );
 
 describe("case-sensitive search", () => {
+  it("retains Unicode letters, numbers, and combining marks in exact-case tokens", () => {
+    expect(tokenize("École １２３ e\u0301cole", true)).toEqual([
+      "École",
+      "１２３",
+      "e\u0301cole",
+    ]);
+    expect(tokenize("École")).toEqual(["cole"]); // Existing default parsing.
+  });
+
+  it.each<[string, string[]]>([
+    ["École", ["unicode-cwd-upper", "unicode-title-upper", "unicode-upper"]],
+    ["école", ["unicode-cwd-lower", "unicode-lower", "unicode-title-lower"]],
+    ["E\u0301cole", ["decomposed-upper"]],
+    ["e\u0301cole", ["decomposed-lower"]],
+    ["１２３", ["unicode-number"]],
+  ])(
+    "matches the complete Unicode token %s with exact case",
+    (query, expected) => {
+      const results = index.search(query, { caseSensitive: true });
+      expect(results.map((result) => result.entry.id).sort()).toEqual(expected);
+    }
+  );
+
+  it("preserves Unicode query case through HTTP and in highlights", async () => {
+    const response = await fetch(
+      `${baseUrl}/api/search?q=${encodeURIComponent("École")}&caseSensitive=true`
+    );
+    const results = (await response.json()) as SearchResult[];
+    expect(response.status).toBe(200);
+    expect(results.map((result) => result.entry.id).sort()).toEqual([
+      "unicode-cwd-upper",
+      "unicode-title-upper",
+      "unicode-upper",
+    ]);
+    const content = results.find(
+      (result) => result.entry.id === "unicode-upper"
+    )!;
+    expect(content.highlights).toEqual(["École"]);
+  });
+
   it("preserves query token case only when requested", () => {
     expect(tokenize("HTTPServer_42 CodeX")).toEqual([
       "httpserver",
