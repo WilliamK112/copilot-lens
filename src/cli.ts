@@ -30,7 +30,10 @@ if (process.env.VITEST !== "true") {
 
   const args = process.argv.slice(2);
 
-  if (args[0] === "tokens") {
+  if (args[0] === "--version" || args[0] === "-v") {
+    const { version }: { version: string } = require("../package.json");
+    process.stdout.write(`${version}\n`);
+  } else if (args[0] === "tokens") {
     const { runTokensTUI } = require("./cli-tokens");
     runTokensTUI(args.slice(1));
   } else if (args[0] === "--help" || args[0] === "-h" || args[0] === "help") {
@@ -42,6 +45,7 @@ if (process.env.VITEST !== "true") {
     tokens      Show token usage in the terminal (Ink TUI)
 
   Options:
+    --version   Print the installed version (alias: -v)
     --port <n>  Port for the web dashboard (default: 3000)
     --host <h>  Host for the web dashboard (default: localhost)
     --open      Open the dashboard in your browser
