@@ -56,8 +56,11 @@ describe("Copilot CLI token log size limit", () => {
     files.readdirSync.mockReturnValue(["large.log", "gone.log", "valid.log"]);
     files.statSync.mockImplementation((file) => {
       const name = path.basename(file);
-      if (name === "gone.log") throw Object.assign(new Error("gone"), { code: "ENOENT" });
-      return { size: name === "large.log" ? MAX_LOG_SIZE + 1 : RESPONSE.length };
+      if (name === "gone.log")
+        throw Object.assign(new Error("gone"), { code: "ENOENT" });
+      return {
+        size: name === "large.log" ? MAX_LOG_SIZE + 1 : RESPONSE.length,
+      };
     });
 
     const result = getTokenUsage("copilot-cli");
@@ -65,7 +68,8 @@ describe("Copilot CLI token log size limit", () => {
     expect(result.totals.calls).toBe(1);
     expect(result.logsScanned).toBe(3);
     expect(files.readFileSync).toHaveBeenCalledExactlyOnceWith(
-      path.join(getLogsDir(), "valid.log"), "utf-8"
+      path.join(getLogsDir(), "valid.log"),
+      "utf-8"
     );
   });
 });
