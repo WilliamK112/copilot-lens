@@ -3,7 +3,7 @@ import * as path from "path";
 import * as os from "os";
 import { randomUUID } from "crypto";
 import type { SessionMeta, SessionDetail, SessionEvent, SessionStatus } from "./sessions";
-import { cachedCall } from "./cache";
+import { cachedCall, getCacheTtlMs } from "./cache";
 import { isValidSessionId } from "./validation";
 
 // ============ Platform paths ============
@@ -351,10 +351,8 @@ export interface ClaudeCodeAnalyticsEntry {
   msgLengths: number[];
 }
 
-const CACHE_TTL = 30_000;
-
 export function getClaudeCodeAnalytics(): ClaudeCodeAnalyticsEntry[] {
-  return cachedCall("getClaudeCodeAnalytics", CACHE_TTL, _computeClaudeCodeAnalytics);
+  return cachedCall("getClaudeCodeAnalytics", getCacheTtlMs(), _computeClaudeCodeAnalytics);
 }
 
 function _computeClaudeCodeAnalytics(): ClaudeCodeAnalyticsEntry[] {

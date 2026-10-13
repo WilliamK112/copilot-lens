@@ -4,7 +4,7 @@ import * as os from "os";
 import { parse as parseYaml } from "yaml";
 import { listVSCodeSessions, getVSCodeSession, isVSCodeSession, getVSCodeAnalytics, normalizeVSCodeToolName, scanVSCodeMcpConfig } from "./vscode-sessions";
 import { listClaudeCodeSessions, getClaudeCodeSession, isClaudeCodeSession, getClaudeCodeAnalytics } from "./claude-code-sessions";
-import { cachedCall } from "./cache";
+import { cachedCall, getCacheTtlMs } from "./cache";
 import { isValidSessionId } from "./validation";
 
 export type SessionStatus = "running" | "completed" | "error";
@@ -161,10 +161,8 @@ function listCliSessions(): SessionMeta[] {
   return sessions;
 }
 
-const CACHE_TTL = 30_000; // 30 seconds
-
 export function listSessions(): SessionMeta[] {
-  return cachedCall("listSessions", CACHE_TTL, () => {
+  return cachedCall("listSessions", getCacheTtlMs(), () => {
     const cli = listCliSessions();
     let vscode: SessionMeta[] = [];
     try {
@@ -295,7 +293,7 @@ export function getSession(sessionId: string): SessionDetail | null {
 export type AnalyticsSourceFilter = "all" | "cli" | "vscode" | "claude-code";
 
 export function getAnalytics(source: AnalyticsSourceFilter = "all"): AnalyticsData {
-  return cachedCall(`getAnalytics:${source}`, CACHE_TTL, () => _computeAnalytics(source));
+  return cachedCall(`getAnalytics:${source}`, getCacheTtlMs(), () => _computeAnalytics(source));
 }
 
 /** Return the nearest-rank percentile without changing the caller's samples. */
