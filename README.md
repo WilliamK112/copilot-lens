@@ -22,6 +22,7 @@ Or `npm install -g copilot-lens` for a permanent install.
 copilot-lens                  # Web dashboard at localhost:3000
 copilot-lens --open           # Open browser automatically
 copilot-lens --port 8080
+copilot-lens --version        # Print the installed version (or use -v)
 copilot-lens tokens           # Token usage in the terminal (Ink TUI)
 copilot-lens tokens --json    # Machine-readable output
 ```
@@ -42,6 +43,16 @@ In PowerShell:
 $env:COPILOT_LENS_CACHE_TTL_MS = "5000"
 copilot-lens --open
 ```
+
+## Search API
+
+`GET /api/search?q=keyword&offset=20&limit=20` returns matches 21–40 as an array
+of search results. Ranking and source filtering happen before pagination.
+
+`limit` defaults to `20` and accepts integers from `1` to `100`; `offset` defaults
+to `0` and accepts non-negative safe integers. Query values must be decimal
+integers. Invalid or repeated pagination parameters return HTTP 400 with an
+`error` message. Offsets beyond the last match return an empty array.
 
 ## Features
 
@@ -91,6 +102,16 @@ Cached input is charged separately from other prompt tokens. Cache-write
 premiums, long-context surcharges, service tiers, and other fees are excluded,
 so this is an approximate API reference cost, not a Copilot bill. The dashboard
 has a separate, broader pricing table and can show a partially priced estimate.
+
+### Token usage CSV export
+
+Download `/api/token-usage?format=csv` to analyse individual calls in a spreadsheet.
+Add `source=copilot-cli` or `source=claude-code` to filter the export. The CSV uses
+the same cached snapshot as the JSON summary and lists calls chronologically with
+columns `timestamp`, `model`, `source`, `prompt_tokens`, `completion_tokens`,
+`cached_tokens`, and `total_tokens`. Text cells are quoted, and formula-prefixed
+text is prefixed with an apostrophe for spreadsheet import. Empty sources return
+the header row.
 
 ## Where the data comes from
 

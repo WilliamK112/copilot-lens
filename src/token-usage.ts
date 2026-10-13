@@ -525,9 +525,10 @@ export function aggregate(
   };
 }
 
-export function getTokenUsage(
-  source: TokenSourceFilter = "all"
-): TokenUsageAnalytics {
+function getTokenUsageData(source: TokenSourceFilter = "all"): {
+  analytics: TokenUsageAnalytics;
+  calls: TokenCall[];
+} {
   return cachedCall(`tokenUsage:${source}`, getCacheTtlMs(), () => {
     const cli = collectCopilotCli();
     const cc = collectClaudeCode();
@@ -568,6 +569,41 @@ export function getTokenUsage(
     const agg = aggregate(selected, logsScanned, logsDir);
     agg.source = source;
     agg.sources = sourcesSummary;
-    return agg;
+    return { analytics: agg, calls: selected };
   });
+}
+
+export function getTokenUsage(
+  source: TokenSourceFilter = "all"
+): TokenUsageAnalytics {
+  return getTokenUsageData(source).analytics;
+}
+
+function csvCell(value: string | number): string {
+  if (typeof value === "number") return String(value);
+  const text = /^\s*[=+\-@]/.test(value) ? "'" + value : value;
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function* tokenCallsCsv(calls: TokenCall[]): Generator<string> {
+  yield "timestamp,model,source,prompt_tokens,completion_tokens,cached_tokens,total_tokens\r\n";
+  for (const call of calls) {
+    yield [
+      call.timestamp,
+      call.model,
+      call.source,
+      call.prompt_tokens,
+      call.completion_tokens,
+      call.cached_tokens,
+      call.total_tokens,
+    ]
+      .map(csvCell)
+      .join(",") + "\r\n";
+  }
+}
+
+export function getTokenUsageCsv(
+  source: TokenSourceFilter = "all"
+): Iterable<string> {
+  return tokenCallsCsv(getTokenUsageData(source).calls);
 }

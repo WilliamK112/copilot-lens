@@ -17,14 +17,20 @@ export interface SearchResult {
 
 export interface SearchOptions {
   limit?: number; // default 20
+  offset?: number; // default 0, applied after ranking and source filtering
   source?: "cli" | "vscode" | "claude-code" | "all"; // default 'all'
 }
 
 function stripCodeBlocks(text: string): string {
-  // Matches markdown code blocks starting with ``` and ending with ```,
-  // including all content in between (using [\s\S]*? for non-greedy multi-line match),
-  // and replaces them with a single space.
-  return text.replace(/```[\s\S]*?```/g, " ");
+  // Markdown fences may close with an equal or longer run of the same
+  // delimiter. Inline spans require an exact run; do not pair with a
+  // substring of a longer delimiter and accidentally swallow surrounding prose.
+  return text
+    .replace(
+      /(?<!`)(`{3,})(?!`)[\s\S]*?(?<!`)\1`*(?!`)|(?<!~)(~{3,})(?!~)[\s\S]*?(?<!~)\2~*(?!~)/g,
+      " "
+    )
+    .replace(/(?<!`)(`{1,2})(?!`)[\s\S]*?(?<!`)\1(?!`)/g, " ");
 }
 
 export function tokenize(query: string): string[] {
@@ -59,6 +65,7 @@ export class SearchIndex {
   private entries: SearchEntry[] = [];
   private storedSessions: SessionMeta[] | null = null;
   private signature = "";
+  private skippedWarning = "";
 
   // A cheap fingerprint of the session set. Changes when sessions are added,
   // removed, or updated, so the index can detect when it has gone stale.
@@ -82,10 +89,14 @@ export class SearchIndex {
 
   private _doBuild(sessions: SessionMeta[]): void {
     this.entries = [];
+    let skippedCount = 0;
     for (const meta of sessions) {
       try {
         const detail = getSession(meta.id);
-        if (!detail) continue;
+        if (!detail) {
+          skippedCount++;
+          continue;
+        }
 
         const content: string[] = [];
         for (const event of detail.events) {
@@ -109,9 +120,27 @@ export class SearchIndex {
           content,
         });
       } catch {
-        // skip silently
+        skippedCount++;
       }
     }
+    // An entirely unreadable session set is retried by search(). Avoid repeating
+    // the same diagnostic on every query while allowing those retries to recover.
+    const warning = skippedCount
+      ? JSON.stringify([
+          skippedCount,
+          sessions
+            .map((meta) =>
+              JSON.stringify([meta.source, meta.id, meta.updatedAt])
+            )
+            .sort(),
+        ])
+      : "";
+    if (warning && warning !== this.skippedWarning) {
+      console.warn(
+        `[copilot-lens] search: skipped ${skippedCount} session${skippedCount === 1 ? "" : "s"} that could not be loaded or parsed`
+      );
+    }
+    this.skippedWarning = warning;
   }
 
   search(query: string, options?: SearchOptions): SearchResult[] {
@@ -130,6 +159,7 @@ export class SearchIndex {
     if (tokens.length === 0) return [];
 
     const limit = options?.limit ?? 20;
+    const offset = options?.offset ?? 0;
     const sourceFilter = options?.source ?? "all";
 
     const results: SearchResult[] = [];
@@ -174,7 +204,7 @@ export class SearchIndex {
     }
 
     results.sort((a, b) => b.score - a.score);
-    return results.slice(0, limit);
+    return results.slice(offset, offset + limit);
   }
 
   private extractHighlights(rawContent: string, tokens: string[]): string[] {
@@ -224,6 +254,7 @@ export class SearchIndex {
   clear(): void {
     this.entries = [];
     this.signature = "";
+    this.skippedWarning = "";
     // storedSessions kept so search() can lazy-rebuild after clear()
   }
 }
