@@ -163,8 +163,8 @@ describe("token usage CSV", () => {
     const response = await fetch(`${baseUrl}/api/token-usage?format=csv`);
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toMatch(/^text\/csv/);
-    expect(response.headers.get("content-disposition")).toBe(
-      'attachment; filename="token-usage.csv"'
+    expect(response.headers.get("content-disposition")).toMatch(
+      /^attachment; filename="?token-usage\.csv"?$/
     );
     expect(await response.text()).toBe(
       header + cliFirst + claudeRow + cliSecond

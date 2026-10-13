@@ -113,6 +113,7 @@ export function createApp(options: AppOptions = {}) {
 
       const results = searchIndex.search(q, {
         limit,
+        caseSensitive: req.query.caseSensitive === "true",
         offset,
         source: source as "cli" | "vscode" | "all",
       });
