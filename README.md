@@ -44,6 +44,16 @@ $env:COPILOT_LENS_CACHE_TTL_MS = "5000"
 copilot-lens --open
 ```
 
+## Search API
+
+`GET /api/search?q=keyword&offset=20&limit=20` returns matches 21–40 as an array
+of search results. Ranking and source filtering happen before pagination.
+
+`limit` defaults to `20` and accepts integers from `1` to `100`; `offset` defaults
+to `0` and accepts non-negative safe integers. Query values must be decimal
+integers. Invalid or repeated pagination parameters return HTTP 400 with an
+`error` message. Offsets beyond the last match return an empty array.
+
 ## Features
 
 - **Search**: full-text across every session, with source/date/directory filters
@@ -75,6 +85,16 @@ option remain case-insensitive.
 ![0 to 100 score per repo with actionable improvement tips](https://raw.githubusercontent.com/pavanvamsi3/copilot-lens/main/assets/copilot-lens-score.png)
 
 > **About the cost number:** GitHub Copilot bills on **premium requests**, not tokens. The cost shown is what you'd pay calling Anthropic / OpenAI / Google directly with the same usage. Useful as a reference, not your GitHub bill.
+
+### Token usage CSV export
+
+Download `/api/token-usage?format=csv` to analyse individual calls in a spreadsheet.
+Add `source=copilot-cli` or `source=claude-code` to filter the export. The CSV uses
+the same cached snapshot as the JSON summary and lists calls chronologically with
+columns `timestamp`, `model`, `source`, `prompt_tokens`, `completion_tokens`,
+`cached_tokens`, and `total_tokens`. Text cells are quoted, and formula-prefixed
+text is prefixed with an apostrophe for spreadsheet import. Empty sources return
+the header row.
 
 ## Where the data comes from
 
