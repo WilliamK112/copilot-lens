@@ -54,7 +54,18 @@ export function createApp(options: AppOptions = {}) {
 
   const searchIndex = new SearchIndex();
 
+  // Read the package version once when the app is created, not per request.
+  const { version: appVersion } = require("../package.json") as {
+    version: string;
+  };
+
+  // API: Health check
+  app.get("/api/health", (_req, res) => {
+    res.status(200).json({ status: "ok", version: appVersion });
+  });
+
   // Serve static frontend files
+
   app.use(express.static(path.join(__dirname, "..", "public")));
 
   // API: Full-text search
