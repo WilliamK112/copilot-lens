@@ -4,6 +4,7 @@ import { runInNewContext } from "vm";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 import { getDashboardUrl } from "../cli-url";
+import { parseDashboardArgs } from "../cli-args";
 
 // Execute the real entry point with its external effects isolated. CI need not
 // build dist/ first, and these tests never bind a port or launch a browser.
@@ -31,6 +32,7 @@ async function start(args: string[], platform: string) {
   const createApp = vi.fn(() => ({ listen }));
   const modules: Record<string, unknown> = {
     "./cli-url": { getDashboardUrl },
+    "./cli-args": { parseDashboardArgs },
     "./server": { createApp },
     child_process: { execFile },
     "./cli-browser": { openLinuxBrowser },
