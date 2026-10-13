@@ -87,6 +87,28 @@ option remain case-insensitive.
 
 > **About the cost number:** GitHub Copilot bills on **premium requests**, not tokens. The cost shown is what you'd pay calling Anthropic / OpenAI / Google directly with the same usage. Useful as a reference, not your GitHub bill.
 
+### Estimated API cost
+
+The JSON token-usage response includes `totals.estimatedCostUSD`, a lifetime
+estimate for the selected source. It is `null` if any model is unpriced and `0`
+when there are no calls. The API table supports `claude-sonnet-4` (including
+`claude-sonnet-4-20250514`) and `gpt-4o` (including its `2024-08-06` and
+`2024-11-20` snapshots). CAPI routing prefixes are normalized before lookup.
+
+Approximate standard USD rates per million tokens, checked October 13, 2026:
+
+| Model           | Input | Cached input | Output |
+| --------------- | ----- | ------------ | ------ |
+| Claude Sonnet 4 | $3.00 | $0.30        | $15.00 |
+| GPT-4o          | $2.50 | $1.25        | $10.00 |
+
+Rates come from [Anthropic pricing](https://platform.claude.com/docs/en/about-claude/pricing)
+and [OpenAI GPT-4o pricing](https://developers.openai.com/api/docs/models/gpt-4o).
+Cached input is charged separately from other prompt tokens. Cache-write
+premiums, long-context surcharges, service tiers, and other fees are excluded,
+so this is an approximate API reference cost, not a Copilot bill. The dashboard
+has a separate, broader pricing table and can show a partially priced estimate.
+
 ### Token usage CSV export
 
 Download `/api/token-usage?format=csv` to analyse individual calls in a spreadsheet.
