@@ -138,4 +138,27 @@ describe("skipped search sessions", () => {
     index.search("searchable");
     expect(console.warn).toHaveBeenCalledTimes(2);
   });
+
+  it.each([
+    { id: "replacement" },
+    { source: "vscode" as const },
+    { updatedAt: "2024-01-15T10:30:00Z" },
+  ])("distinguishes failed sets with equal cheap signatures: %j", (change) => {
+    load.mockReturnValue(null);
+    const older = { ...metas[1], updatedAt: "2024-01-15T10:00:00Z" };
+    const index = new SearchIndex();
+    index.buildIndex([metas[0], older]);
+    index.buildIndex([metas[0], { ...older, ...change }]);
+    expect(console.warn).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not repeat an identical failed-set warning when enumeration order changes", () => {
+    load.mockReturnValue(null);
+    const sessions = metas.slice(0, 2);
+    const index = new SearchIndex();
+    index.buildIndex(sessions);
+    index.buildIndex([...sessions].reverse());
+    expect(load).toHaveBeenCalledTimes(4);
+    expect(console.warn).toHaveBeenCalledTimes(1);
+  });
 });

@@ -119,7 +119,16 @@ export class SearchIndex {
     }
     // An entirely unreadable session set is retried by search(). Avoid repeating
     // the same diagnostic on every query while allowing those retries to recover.
-    const warning = skippedCount ? `${this.signature}:${skippedCount}` : "";
+    const warning = skippedCount
+      ? JSON.stringify([
+          skippedCount,
+          sessions
+            .map((meta) =>
+              JSON.stringify([meta.source, meta.id, meta.updatedAt])
+            )
+            .sort(),
+        ])
+      : "";
     if (warning && warning !== this.skippedWarning) {
       console.warn(
         `[copilot-lens] search: skipped ${skippedCount} session${skippedCount === 1 ? "" : "s"} that could not be loaded or parsed`
