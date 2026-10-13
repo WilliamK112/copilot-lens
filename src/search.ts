@@ -21,10 +21,15 @@ export interface SearchOptions {
 }
 
 function stripCodeBlocks(text: string): string {
-  // Matches markdown code blocks starting with ``` and ending with ```,
-  // including all content in between (using [\s\S]*? for non-greedy multi-line match),
-  // and replaces them with a single space.
-  return text.replace(/```[\s\S]*?```/g, " ");
+  // Markdown fences may close with an equal or longer run of the same
+  // delimiter. Inline spans require an exact run; do not pair with a
+  // substring of a longer delimiter and accidentally swallow surrounding prose.
+  return text
+    .replace(
+      /(?<!`)(`{3,})(?!`)[\s\S]*?(?<!`)\1`*(?!`)|(?<!~)(~{3,})(?!~)[\s\S]*?(?<!~)\2~*(?!~)/g,
+      " "
+    )
+    .replace(/(?<!`)(`{1,2})(?!`)[\s\S]*?(?<!`)\1(?!`)/g, " ");
 }
 
 export function tokenize(query: string): string[] {
