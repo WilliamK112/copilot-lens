@@ -59,6 +59,7 @@ export class SearchIndex {
   private entries: SearchEntry[] = [];
   private storedSessions: SessionMeta[] | null = null;
   private signature = "";
+  private skippedWarning = "";
 
   // A cheap fingerprint of the session set. Changes when sessions are added,
   // removed, or updated, so the index can detect when it has gone stale.
@@ -82,10 +83,14 @@ export class SearchIndex {
 
   private _doBuild(sessions: SessionMeta[]): void {
     this.entries = [];
+    let skippedCount = 0;
     for (const meta of sessions) {
       try {
         const detail = getSession(meta.id);
-        if (!detail) continue;
+        if (!detail) {
+          skippedCount++;
+          continue;
+        }
 
         const content: string[] = [];
         for (const event of detail.events) {
@@ -109,9 +114,18 @@ export class SearchIndex {
           content,
         });
       } catch {
-        // skip silently
+        skippedCount++;
       }
     }
+    // An entirely unreadable session set is retried by search(). Avoid repeating
+    // the same diagnostic on every query while allowing those retries to recover.
+    const warning = skippedCount ? `${this.signature}:${skippedCount}` : "";
+    if (warning && warning !== this.skippedWarning) {
+      console.warn(
+        `[copilot-lens] search: skipped ${skippedCount} session${skippedCount === 1 ? "" : "s"} that could not be loaded or parsed`
+      );
+    }
+    this.skippedWarning = warning;
   }
 
   search(query: string, options?: SearchOptions): SearchResult[] {
@@ -224,6 +238,7 @@ export class SearchIndex {
   clear(): void {
     this.entries = [];
     this.signature = "";
+    this.skippedWarning = "";
     // storedSessions kept so search() can lazy-rebuild after clear()
   }
 }
