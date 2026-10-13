@@ -75,8 +75,7 @@ function readSessionIndex(dataDir: string): VSCodeSessionIndex[] {
         : undefined;
     if (
       code === "EBUSY" ||
-      code === "SQLITE_BUSY" ||
-      code === "SQLITE_LOCKED"
+      (typeof code === "string" && /^SQLITE_(BUSY|LOCKED)(?:_|$)/.test(code))
     ) {
       console.warn(
         "[copilot-lens] VS Code database is locked — close VS Code or wait a moment and retry"

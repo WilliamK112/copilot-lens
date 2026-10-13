@@ -48,20 +48,25 @@ afterEach(() => vi.restoreAllMocks());
 describe.each(["open", "query"] as const)(
   "VS Code database %s errors",
   (stage) => {
-    it.each(["EBUSY", "SQLITE_BUSY", "SQLITE_LOCKED"])(
-      "warns specifically for %s",
-      (code) => {
-        const error = Object.assign(new Error("fixture failure"), { code });
-        if (stage === "open") state.openError = error;
-        else state.queryError = error;
+    it.each([
+      "EBUSY",
+      "SQLITE_BUSY",
+      "SQLITE_LOCKED",
+      "SQLITE_BUSY_RECOVERY",
+      "SQLITE_BUSY_SNAPSHOT",
+      "SQLITE_LOCKED_SHAREDCACHE",
+      "SQLITE_LOCKED_VTAB",
+    ])("warns specifically for %s", (code) => {
+      const error = Object.assign(new Error("fixture failure"), { code });
+      if (stage === "open") state.openError = error;
+      else state.queryError = error;
 
-        expect(_testing.readSessionIndex("fixture-data")).toEqual([]);
-        expect(console.warn).toHaveBeenCalledExactlyOnceWith(warning);
-        expect(state.close).toHaveBeenCalledTimes(stage === "query" ? 1 : 0);
-      }
-    );
+      expect(_testing.readSessionIndex("fixture-data")).toEqual([]);
+      expect(console.warn).toHaveBeenCalledExactlyOnceWith(warning);
+      expect(state.close).toHaveBeenCalledTimes(stage === "query" ? 1 : 0);
+    });
 
-    it.each(["ENOENT", "EACCES", "SQLITE_CORRUPT"])(
+    it.each(["ENOENT", "EACCES", "SQLITE_CORRUPT", "SQLITE_BUSYISH"])(
       "keeps %s failures silent",
       (code) => {
         const error = Object.assign(new Error("fixture failure"), { code });
