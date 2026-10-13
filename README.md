@@ -70,6 +70,16 @@ copilot-lens --open
 
 > **About the cost number:** GitHub Copilot bills on **premium requests**, not tokens. The cost shown is what you'd pay calling Anthropic / OpenAI / Google directly with the same usage. Useful as a reference, not your GitHub bill.
 
+### Token usage CSV export
+
+Download `/api/token-usage?format=csv` to analyse individual calls in a spreadsheet.
+Add `source=copilot-cli` or `source=claude-code` to filter the export. The CSV uses
+the same cached snapshot as the JSON summary and lists calls chronologically with
+columns `timestamp`, `model`, `source`, `prompt_tokens`, `completion_tokens`,
+`cached_tokens`, and `total_tokens`. Text cells are quoted, and formula-prefixed
+text is prefixed with an apostrophe for spreadsheet import. Empty sources return
+the header row.
+
 ## Where the data comes from
 
 | Source                 | Path                                                                                              |

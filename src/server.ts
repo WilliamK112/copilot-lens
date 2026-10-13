@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import { Readable, pipeline } from "stream";
 import {
   listSessions,
   getSession,
@@ -11,7 +12,11 @@ import {
 } from "./sessions";
 import { clearCache } from "./cache";
 import { SearchIndex } from "./search";
-import { getTokenUsage, type TokenSourceFilter } from "./token-usage";
+import {
+  getTokenUsage,
+  getTokenUsageCsv,
+  type TokenSourceFilter,
+} from "./token-usage";
 
 export interface AppOptions {
   // The host the server binds to. Used to build the allowed-Host list so a
@@ -205,7 +210,15 @@ export function createApp(options: AppOptions = {}) {
       )
         ? (raw as TokenSourceFilter)
         : "all";
-      res.json(getTokenUsage(source));
+      if (req.query.format === "csv") {
+        const rows = getTokenUsageCsv(source);
+        res.attachment("token-usage.csv").type("text/csv; charset=utf-8");
+        pipeline(Readable.from(rows, { objectMode: false }), res, (error) => {
+          if (error && !res.destroyed) res.destroy(error);
+        });
+      } else {
+        res.json(getTokenUsage(source));
+      }
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
