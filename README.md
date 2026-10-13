@@ -22,6 +22,7 @@ Or `npm install -g copilot-lens` for a permanent install.
 copilot-lens                  # Web dashboard at localhost:3000
 copilot-lens --open           # Open browser automatically
 copilot-lens --port 8080
+copilot-lens --version        # Print the installed version (or use -v)
 copilot-lens tokens           # Token usage in the terminal (Ink TUI)
 copilot-lens tokens --json    # Machine-readable output
 ```
