@@ -1,4 +1,4 @@
-import { isIP } from "node:net";
+import { isIP } from "net";
 
 /**
  * Format the URL printed by the dashboard CLI and passed to the browser.
