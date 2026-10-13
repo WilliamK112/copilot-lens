@@ -10,12 +10,12 @@ describe("parseDashboardArgs", () => {
     });
   });
 
-  it.each([["--open", "--no-open"], ["--no-open", "--open"]])(
-    "lets --no-open override --open in either order %j",
-    (...args) => {
-      expect(parseDashboardArgs(args).shouldOpen).toBe(false);
-    }
-  );
+  it.each([
+    ["--open", "--no-open"],
+    ["--no-open", "--open"],
+  ])("lets --no-open override --open in either order %j", (...args) => {
+    expect(parseDashboardArgs(args).shouldOpen).toBe(false);
+  });
 
   it("opens the browser when --open is supplied without --no-open", () => {
     expect(parseDashboardArgs(["--open"]).shouldOpen).toBe(true);
