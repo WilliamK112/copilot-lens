@@ -35,12 +35,14 @@ if (process.env.VITEST !== "true") {
 
   Commands:
     (default)   Start the web dashboard
+    serve       Start the web dashboard
     tokens      Show token usage in the terminal (Ink TUI)
 
   Options:
     --port <n>  Port for the web dashboard (default: 3000)
     --host <h>  Host for the web dashboard (default: localhost)
     --open      Open the dashboard in your browser
+    --no-open   Suppress browser launch, overriding --open
 
   Run "copilot-lens tokens --help" for tokens command options.
 `);
@@ -54,7 +56,7 @@ if (process.env.VITEST !== "true") {
 
     const port = parseInt(getArg("--port", "3000"), 10);
     const host = getArg("--host", "localhost");
-    const shouldOpen = args.includes("--open");
+    const shouldOpen = args.includes("--open") && !args.includes("--no-open");
 
     const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
     if (!LOOPBACK_HOSTS.has(host)) {
