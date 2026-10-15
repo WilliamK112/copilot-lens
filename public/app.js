@@ -550,15 +550,27 @@ function renderDetail(s) {
 
   detailContent
     .querySelector("#exportMarkdownBtn")
-    .addEventListener("click", () => {
+    .addEventListener("click", async (event) => {
       const status = detailContent.querySelector("#markdownExportStatus");
+      const button = event.currentTarget;
       status.hidden = true;
       status.textContent = "";
+      button.disabled = true;
       try {
-        downloadSessionMarkdown(s);
+        const response = await fetch(
+          `/api/sessions/${encodeURIComponent(s.id)}/export-source`
+        );
+        if (!response.ok) {
+          throw new Error(
+            `Could not load full transcript (${response.status})`
+          );
+        }
+        downloadSessionMarkdown(await response.json());
       } catch (error) {
         status.textContent = `Export failed: ${error.message}`;
         status.hidden = false;
+      } finally {
+        button.disabled = false;
       }
     });
 

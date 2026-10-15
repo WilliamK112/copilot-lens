@@ -16,6 +16,7 @@ const {
   deriveStatus,
   msToIso,
   readSessionContent,
+  normalizeVSCodeModelId,
   scanVSCodeMcpConfig,
 } = _testing;
 
@@ -148,6 +149,21 @@ describe("requestsToEvents", () => {
     const assistantMsg = events.find((e) => e.type === "assistant.message");
     expect(assistantMsg).toBeDefined();
     expect(assistantMsg!.data.content).toBe("Here is the explanation");
+  });
+
+  it("carries a normalized model id into assistant messages", () => {
+    const events = requestsToEvents([
+      {
+        requestId: "model-request",
+        modelId: "copilot/claude-sonnet-4.5",
+        message: { text: "Question" },
+        response: [{ value: "Answer" }],
+      },
+    ]);
+
+    const assistantMsg = events.find((e) => e.type === "assistant.message");
+    expect(assistantMsg!.data.model).toBe("claude-sonnet-4.5");
+    expect(normalizeVSCodeModelId("gpt-5")).toBe("gpt-5");
   });
 
   it("includes result text in assistant message", () => {
@@ -321,6 +337,22 @@ describe("readSessionContent", () => {
     const result = readSessionContent(filePath);
     expect(result.requests[0].message.text.length).toBeLessThan(20_000);
     expect(result.requests[0].message.text).toContain("...(truncated)");
+  });
+
+  it("preserves long message text for explicit export reads", () => {
+    const longText = "a".repeat(20_000);
+    const session = {
+      version: 3,
+      sessionId: "test-export",
+      requests: [
+        { requestId: "r1", message: { text: longText }, response: [] },
+      ],
+    };
+    const filePath = path.join(tmpDir, "export.json");
+    fs.writeFileSync(filePath, JSON.stringify(session));
+
+    const result = readSessionContent(filePath, { truncateText: false });
+    expect(result.requests[0].message.text).toBe(longText);
   });
 
   it("truncates long message parts text", () => {

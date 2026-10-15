@@ -122,7 +122,11 @@ function findSessionFile(dataDir: string, sessionId: string): string | null {
   return null;
 }
 
-function readSessionContent(filePath: string): any | null {
+function readSessionContent(
+  filePath: string,
+  options: { truncateText?: boolean } = {}
+): any | null {
+  const truncateText = options.truncateText ?? true;
   try {
     const stat = fs.statSync(filePath);
     if (stat.size > MAX_FILE_SIZE) return null;
@@ -144,8 +148,9 @@ function readSessionContent(filePath: string): any | null {
       return value;
     });
 
-    // Truncate huge message text
-    if (data.requests) {
+    // Keep normal dashboard reads bounded, while allowing explicit export reads
+    // to preserve the full transcript within the existing file-size cap.
+    if (truncateText && data.requests) {
       for (const req of data.requests) {
         const msg = req.message;
         if (
@@ -189,6 +194,11 @@ function deriveStatus(index: VSCodeSessionIndex): SessionStatus {
 function msToIso(ms: number | undefined): string {
   if (!ms) return "";
   return new Date(ms).toISOString();
+}
+
+function normalizeVSCodeModelId(modelId: unknown): string {
+  if (typeof modelId !== "string") return "";
+  return modelId.includes("/") ? modelId.split("/").pop()! : modelId;
 }
 
 function requestsToEvents(requests: any[]): SessionEvent[] {
@@ -266,11 +276,12 @@ function requestsToEvents(requests: any[]): SessionEvent[] {
       const respTs = req.modelState?.completedAt
         ? new Date(req.modelState.completedAt).toISOString()
         : ts;
+      const model = normalizeVSCodeModelId(req.modelId);
       events.push({
         type: "assistant.message",
         id: req.responseId || `resp-${req.requestId || ""}`,
         timestamp: respTs,
-        data: { content: fullResponse },
+        data: { content: fullResponse, ...(model ? { model } : {}) },
       });
     }
   }
@@ -304,12 +315,17 @@ export function listVSCodeSessions(): SessionMeta[] {
   return sessions;
 }
 
-export function getVSCodeSession(sessionId: string): SessionDetail | null {
+export function getVSCodeSession(
+  sessionId: string,
+  options: { preserveFullText?: boolean } = {}
+): SessionDetail | null {
   for (const dataDir of getVSCodeDataDirs()) {
     const filePath = findSessionFile(dataDir, sessionId);
     if (!filePath) continue;
 
-    const content = readSessionContent(filePath);
+    const content = readSessionContent(filePath, {
+      truncateText: !options.preserveFullText,
+    });
     if (!content) continue;
 
     const requests = content.requests || [];
@@ -418,13 +434,9 @@ function _computeVSCodeAnalytics(): VSCodeAnalyticsEntry[] {
         if (msgText) msgLengths.push(msgText.length);
 
         // Model usage
-        const model = req.modelId || "";
+        const model = normalizeVSCodeModelId(req.modelId);
         if (model) {
-          // Normalize model id: "copilot/claude-sonnet-4.5" → "claude-sonnet-4.5"
-          const shortModel = model.includes("/")
-            ? model.split("/").pop()!
-            : model;
-          modelUsage[shortModel] = (modelUsage[shortModel] || 0) + 1;
+          modelUsage[model] = (modelUsage[model] || 0) + 1;
         }
 
         // Tool usage from response parts
@@ -557,6 +569,7 @@ export const _testing = {
   readSessionIndex,
   readSessionContent,
   requestsToEvents,
+  normalizeVSCodeModelId,
   deriveStatus,
   msToIso,
   findSessionFile,

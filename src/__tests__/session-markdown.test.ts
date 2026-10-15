@@ -31,7 +31,7 @@ const code = source.statements
 function setup(click = vi.fn()) {
   const link = { href: "", download: "", click, remove: vi.fn() };
   const status = { textContent: "", hidden: true };
-  const button = { addEventListener: vi.fn() };
+  const button = { addEventListener: vi.fn(), disabled: false };
   const detailContent = {
     innerHTML: "",
     querySelectorAll: vi.fn(() => []),
@@ -43,10 +43,19 @@ function setup(click = vi.fn()) {
   const revokeObjectURL = vi.fn();
   const appendChild = vi.fn();
   const setTimeout = vi.fn();
+  const exportedSession = session([
+    { type: "user.message", data: { content: "full export content" } },
+  ]);
+  const fetch = vi.fn(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => exportedSession,
+  }));
   const context = {
     Blob,
     URL: { createObjectURL, revokeObjectURL },
     setTimeout,
+    fetch,
     document: { createElement: vi.fn(() => link), body: { appendChild } },
     detailContent,
   };
@@ -64,6 +73,8 @@ function setup(click = vi.fn()) {
     revokeObjectURL,
     appendChild,
     setTimeout,
+    fetch,
+    exportedSession,
   };
 }
 
@@ -222,20 +233,37 @@ describe("session Markdown export", () => {
     expect(result.revokeObjectURL).toHaveBeenCalledOnce();
   });
 
-  it("binds each rendered button to its loaded session and displays download errors", () => {
-    const result = setup(
-      vi.fn(() => {
-        throw new Error("Download blocked");
-      })
-    );
+  it("reloads the untruncated session before downloading Markdown", async () => {
+    const result = setup();
     result.renderDetail(session());
     expect(result.detailContent.innerHTML).toContain("Export as Markdown");
     expect(result.detailContent.innerHTML).toContain(
       "/api/sessions/test-session/export"
     );
     const handler = result.button.addEventListener.mock.calls[0][1];
-    handler();
+    await handler({ currentTarget: result.button });
+    expect(result.fetch).toHaveBeenCalledWith(
+      "/api/sessions/test-session/export-source"
+    );
+    const blob = result.createObjectURL.mock.calls[0][0] as Blob;
+    expect(await blob.text()).toContain("full export content");
+    expect(result.button.disabled).toBe(false);
+  });
+
+  it("displays full-session load errors", async () => {
+    const result = setup();
+    result.fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      json: async () => ({}),
+    });
+    result.renderDetail(session());
+    const handler = result.button.addEventListener.mock.calls[0][1];
+    await handler({ currentTarget: result.button });
     expect(result.status.hidden).toBe(false);
-    expect(result.status.textContent).toBe("Export failed: Download blocked");
+    expect(result.status.textContent).toBe(
+      "Export failed: Could not load full transcript (500)"
+    );
+    expect(result.button.disabled).toBe(false);
   });
 });
