@@ -206,6 +206,7 @@ function requestsToEvents(requests: any[]): SessionEvent[] {
 
   for (const req of requests) {
     const ts = req.timestamp ? new Date(req.timestamp).toISOString() : "";
+    const model = normalizeVSCodeModelId(req.modelId);
 
     // User message
     const userText = req.message?.text || "";
@@ -223,7 +224,7 @@ function requestsToEvents(requests: any[]): SessionEvent[] {
       type: "assistant.turn_start",
       id: `turn-${req.requestId || ""}`,
       timestamp: ts,
-      data: {},
+      data: model ? { model } : {},
     });
 
     // Tool invocations from response parts
@@ -276,7 +277,6 @@ function requestsToEvents(requests: any[]): SessionEvent[] {
       const respTs = req.modelState?.completedAt
         ? new Date(req.modelState.completedAt).toISOString()
         : ts;
-      const model = normalizeVSCodeModelId(req.modelId);
       events.push({
         type: "assistant.message",
         id: req.responseId || `resp-${req.requestId || ""}`,

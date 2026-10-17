@@ -311,7 +311,11 @@ function escapeMarkdownInline(value) {
 function buildSessionMarkdown(session) {
   const models = new Set();
   for (const event of session.events) {
-    if (event.type === "session.start" || event.type === "assistant.message") {
+    if (
+      event.type === "session.start" ||
+      event.type === "assistant.turn_start" ||
+      event.type === "assistant.message"
+    ) {
       if (event.data?.model) models.add(event.data.model);
     } else if (event.type === "session.model_change" && event.data?.newModel) {
       models.add(event.data.newModel);
@@ -557,15 +561,24 @@ function renderDetail(s) {
       status.textContent = "";
       button.disabled = true;
       try {
-        const response = await fetch(
-          `/api/sessions/${encodeURIComponent(s.id)}/export-source`
-        );
-        if (!response.ok) {
-          throw new Error(
-            `Could not load full transcript (${response.status})`
-          );
+        let exportSession = s;
+        if (s.source === "vscode") {
+          try {
+            const response = await fetch(
+              `/api/sessions/${encodeURIComponent(s.id)}/export-source`
+            );
+            if (!response.ok) {
+              throw new Error(
+                `Could not load full transcript (${response.status})`
+              );
+            }
+            exportSession = await response.json();
+          } catch (error) {
+            status.textContent = `Exported the loaded transcript; full VS Code text could not be reloaded (${error.message}). Long prompts may be truncated.`;
+            status.hidden = false;
+          }
         }
-        downloadSessionMarkdown(await response.json());
+        downloadSessionMarkdown(exportSession);
       } catch (error) {
         status.textContent = `Export failed: ${error.message}`;
         status.hidden = false;

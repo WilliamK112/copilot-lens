@@ -171,6 +171,18 @@ describe("session Markdown export", () => {
     expect(markdown).toContain("**Model:** initial, next, claude-sonnet-4.5");
   });
 
+  it("reports a model recorded on a response-less assistant turn", () => {
+    const markdown = setup().buildSessionMarkdown(
+      session([
+        {
+          type: "assistant.turn_start",
+          data: { model: "claude-sonnet-4.5" },
+        },
+      ])
+    );
+    expect(markdown).toContain("**Model:** claude-sonnet-4.5");
+  });
+
   it("handles missing date/model/duration without invalid metadata", () => {
     const markdown = setup().buildSessionMarkdown({
       ...session(),
@@ -235,7 +247,7 @@ describe("session Markdown export", () => {
 
   it("reloads the untruncated session before downloading Markdown", async () => {
     const result = setup();
-    result.renderDetail(session());
+    result.renderDetail({ ...session(), source: "vscode" });
     expect(result.detailContent.innerHTML).toContain("Export as Markdown");
     expect(result.detailContent.innerHTML).toContain(
       "/api/sessions/test-session/export"
@@ -250,20 +262,38 @@ describe("session Markdown export", () => {
     expect(result.button.disabled).toBe(false);
   });
 
-  it("displays full-session load errors", async () => {
+  it("exports an already loaded non-VS Code session without another request", async () => {
     const result = setup();
-    result.fetch.mockResolvedValueOnce({
-      ok: false,
-      status: 500,
-      json: async () => ({}),
+    result.renderDetail(
+      session([{ type: "user.message", data: { content: "loaded content" } }])
+    );
+    const handler = result.button.addEventListener.mock.calls[0][1];
+    await handler({ currentTarget: result.button });
+    expect(result.fetch).not.toHaveBeenCalled();
+    const blob = result.createObjectURL.mock.calls[0][0] as Blob;
+    expect(await blob.text()).toContain("loaded content");
+  });
+
+  it("falls back to the loaded VS Code transcript when the reload is offline", async () => {
+    const result = setup();
+    result.fetch.mockRejectedValueOnce(new Error("Failed to fetch"));
+    result.renderDetail({
+      ...session([
+        { type: "user.message", data: { content: "loaded fallback" } },
+      ]),
+      source: "vscode",
     });
-    result.renderDetail(session());
     const handler = result.button.addEventListener.mock.calls[0][1];
     await handler({ currentTarget: result.button });
     expect(result.status.hidden).toBe(false);
-    expect(result.status.textContent).toBe(
-      "Export failed: Could not load full transcript (500)"
+    expect(result.status.textContent).toContain(
+      "Exported the loaded transcript; full VS Code text could not be reloaded"
     );
+    expect(result.status.textContent).toContain(
+      "Long prompts may be truncated"
+    );
+    const blob = result.createObjectURL.mock.calls[0][0] as Blob;
+    expect(await blob.text()).toContain("loaded fallback");
     expect(result.button.disabled).toBe(false);
   });
 });

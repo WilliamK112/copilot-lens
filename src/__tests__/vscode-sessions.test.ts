@@ -166,6 +166,29 @@ describe("requestsToEvents", () => {
     expect(normalizeVSCodeModelId("gpt-5")).toBe("gpt-5");
   });
 
+  it("carries the model id on a response-less assistant turn", () => {
+    const events = requestsToEvents([
+      {
+        requestId: "model-only-request",
+        modelId: "copilot/claude-sonnet-4.5",
+        message: { text: "Use a tool" },
+        response: [
+          { kind: "thinking", value: "Planning" },
+          {
+            kind: "toolInvocationSerialized",
+            toolCallId: "tc-model",
+            originMessage: "bash (Terminal)",
+          },
+        ],
+      },
+    ]);
+
+    expect(events.find((e) => e.type === "assistant.message")).toBeUndefined();
+    expect(events.find((e) => e.type === "assistant.turn_start")!.data).toEqual(
+      { model: "claude-sonnet-4.5" }
+    );
+  });
+
   it("includes result text in assistant message", () => {
     const events = requestsToEvents([
       {
