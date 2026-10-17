@@ -137,7 +137,7 @@ VS Code Insiders is supported. Pasted images are stripped; files over 200MB are 
 ```bash
 git clone https://github.com/pavanvamsi3/copilot-lens.git
 cd copilot-lens
-nvm use            # Reads the repository's Node.js version from .nvmrc
+nvm install        # Installs and activates the Node.js version from .nvmrc
 npm install
 npm run dev        # tsx, no build step
 npm run build
