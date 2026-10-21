@@ -4,6 +4,7 @@ let analytics = null;
 let charts = {};
 let searchDebounce = null;
 let isSearchActive = false;
+let searchResultSessions = [];
 let analyticsSource = "all";
 let bookmarks = {}; // sessionId → { tags, note, createdAt }
 let allTags = []; // known tag values for auto-suggest
@@ -1163,9 +1164,137 @@ async function exportAllSessions() {
   }
 }
 
+function csvCell(value) {
+  const text = value == null ? "" : String(value);
+  // Spreadsheet apps may execute cells beginning with these characters as
+  // formulas. Keep user-controlled titles and directories inert on open.
+  const safe = /^[=+\-@]/.test(text) ? `'${text}` : text;
+  return `"${safe.replace(/"/g, '""')}"`;
+}
+
+function getSessionCsvModel(session) {
+  let model = typeof session.model === "string" ? session.model : "";
+  for (const event of session.events || []) {
+    if (event.type === "session.start" && event.data?.model) {
+      model = event.data.model;
+    } else if (event.type === "session.model_change" && event.data?.newModel) {
+      model = event.data.newModel;
+    } else if (
+      event.type === "session.info" &&
+      event.data?.infoType === "model"
+    ) {
+      const match = (event.data.message || "").match(
+        /Model changed to:\s*([^\s.]+(?:[-.][^\s.]+)*)/i
+      );
+      if (match) model = match[1];
+    } else if (event.type === "assistant.message" && event.data?.model) {
+      model = event.data.model;
+    }
+  }
+  return model;
+}
+
+function buildSessionsCsv(rows) {
+  const header = [
+    "Date",
+    "Source",
+    "Model",
+    "Status",
+    "Duration (min)",
+    "Tool Count",
+    "Directory",
+  ];
+  const lines = rows.map((session) => {
+    const duration = Number.isFinite(session.duration)
+      ? (session.duration / 60_000).toFixed(2)
+      : "";
+    const toolCount = Number.isFinite(
+      session.eventCounts?.["tool.execution_start"]
+    )
+      ? session.eventCounts["tool.execution_start"]
+      : (session.events || []).filter(
+          (event) => event.type === "tool.execution_start"
+        ).length;
+    return [
+      session.createdAt || "",
+      session.source || "",
+      getSessionCsvModel(session),
+      session.status || "",
+      duration,
+      toolCount,
+      session.cwd || "",
+    ]
+      .map(csvCell)
+      .join(",");
+  });
+  return [header.map(csvCell).join(","), ...lines].join("\r\n") + "\r\n";
+}
+
+async function loadSessionCsvDetails(filtered) {
+  // Keep requests bounded for large histories while preserving the filtered
+  // list's order in the finished CSV.
+  const rows = new Array(filtered.length);
+  let next = 0;
+  async function worker() {
+    while (next < filtered.length) {
+      const index = next++;
+      const session = filtered[index];
+      try {
+        const response = await fetch(
+          `/api/sessions/${encodeURIComponent(session.id)}`
+        );
+        rows[index] = response.ok ? await response.json() : session;
+      } catch {
+        rows[index] = session;
+      }
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(8, filtered.length) }, () => worker())
+  );
+  return rows;
+}
+
+async function exportFilteredSessions() {
+  const button = document.getElementById("exportSessionsCsvBtn");
+  const status = document.getElementById("sessionExportStatus");
+  button.disabled = true;
+  status.hidden = true;
+  status.textContent = "";
+  try {
+    const filtered = isSearchActive
+      ? searchResultSessions
+      : getFilteredSessions();
+    const rows = await loadSessionCsvDetails(filtered);
+    const blob = new Blob(["\ufeff", buildSessionsCsv(rows)], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "sessions-filtered.csv";
+    link.hidden = true;
+    document.body.appendChild(link);
+    try {
+      link.click();
+    } finally {
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    }
+  } catch (error) {
+    status.textContent = `CSV export failed: ${error.message}`;
+    status.hidden = false;
+  } finally {
+    button.disabled = false;
+  }
+}
+
 document
   .getElementById("exportSessionsBtn")
   .addEventListener("click", exportAllSessions);
+document
+  .getElementById("exportSessionsCsvBtn")
+  .addEventListener("click", exportFilteredSessions);
 
 // Search kbd visibility
 function updateSearchKbd() {
@@ -1424,6 +1553,7 @@ async function runSearch(q) {
     renderSearchResults(page.results, page.totalMatches);
   } catch (err) {
     isSearchActive = true;
+    searchResultSessions = [];
     sessionCount.textContent = "Search failed";
     sessionList.innerHTML = `<div class="error-message">Search failed: ${escapeHtml(err.message)}</div>`;
   } finally {
@@ -1433,10 +1563,12 @@ async function runSearch(q) {
 
 function clearSearch() {
   isSearchActive = false;
+  searchResultSessions = [];
   renderSessions();
 }
 
 function renderSearchResults(results, totalMatches = results?.length ?? 0) {
+  searchResultSessions = (results || []).map(({ entry }) => entry);
   const query = searchInput.value.trim();
   if (!results || results.length === 0) {
     sessionCount.textContent = "No results found";
