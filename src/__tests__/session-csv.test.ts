@@ -13,11 +13,13 @@ const ast = ts.createSourceFile(
   ts.ScriptKind.JS
 );
 const names = [
+  "loadSessions",
   "csvCell",
   "getSessionCsvModel",
   "buildSessionsCsv",
   "loadSessionCsvDetails",
   "updateSessionCsvExportButton",
+  "setSearchPending",
   "exportFilteredSessions",
 ];
 const code = ast.statements
@@ -257,5 +259,42 @@ describe("filtered session CSV export", () => {
     expect(createObjectURL).not.toHaveBeenCalled();
     expect(button.disabled).toBe(true);
     expect(status.textContent).toContain("sessions to finish loading");
+  });
+
+  it("refreshes active full-text results after reloading sessions", async () => {
+    const button = { disabled: false };
+    const renderSessions = vi.fn();
+    const updateDirFilter = vi.fn();
+    const vmContext: Record<string, unknown> = context({
+      sessionLoadGeneration: 0,
+      isSessionListLoading: false,
+      isSearchActive: true,
+      isSearchPending: false,
+      searchGeneration: 7,
+      isSessionCsvExporting: false,
+      sessions: [{ id: "stale" }],
+      bookmarks: {},
+      searchInput: { value: "message-only hit" },
+      sessionList: { innerHTML: "" },
+      fetch: vi.fn(async () => ({
+        json: async () => [{ id: "fresh", bookmarked: false }],
+      })),
+      loadBookmarks: vi.fn(async () => undefined),
+      updateDirFilter,
+      renderSessions,
+      escapeHtml: (value: string) => value,
+      document: { getElementById: () => button },
+    });
+    const runSearch = vi.fn(async () => {
+      vmContext.isSearchPending = false;
+    });
+    vmContext.runSearch = runSearch;
+
+    await runInNewContext(`${code}\nloadSessions()`, vmContext);
+
+    expect(runSearch).toHaveBeenCalledWith("message-only hit", 8);
+    expect(renderSessions).not.toHaveBeenCalled();
+    expect(updateDirFilter).toHaveBeenCalledOnce();
+    expect(button.disabled).toBe(false);
   });
 });

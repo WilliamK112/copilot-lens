@@ -1136,7 +1136,16 @@ async function loadSessions() {
       }
     }
     updateDirFilter();
-    renderSessions();
+    const activeQuery = searchInput.value.trim();
+    if (isSearchActive && activeQuery) {
+      // The existing full-text result list belongs to the pre-refresh session
+      // snapshot. Replace it before making CSV export available again.
+      const activeSearchGeneration = ++searchGeneration;
+      setSearchPending(true);
+      await runSearch(activeQuery, activeSearchGeneration);
+    } else {
+      renderSessions();
+    }
   } catch (err) {
     if (generation === sessionLoadGeneration) {
       sessionList.innerHTML = `<div class="error-message">Failed to load sessions: ${escapeHtml(err.message)}</div>`;
