@@ -1145,6 +1145,8 @@ async function loadSessions() {
     if (isSearchActive && activeQuery) {
       // The existing full-text result list belongs to the pre-refresh session
       // snapshot. Replace it before making CSV export available again.
+      clearTimeout(searchDebounce);
+      searchDebounce = null;
       const activeSearchGeneration = ++searchGeneration;
       setSearchPending(true);
       await runSearch(activeQuery, activeSearchGeneration);
@@ -1364,7 +1366,20 @@ async function exportFilteredSessions() {
   updateSessionCsvExportButton();
   try {
     const filtered = isSearchActive
-      ? searchResultSessions
+      ? searchResultSessions.map((entry) => {
+          const entrySource = entry.source || "cli";
+          const metadata = sessions.find(
+            (session) =>
+              session.id === entry.id &&
+              (session.source || "cli") === entrySource
+          );
+          return {
+            ...entry,
+            ...metadata,
+            createdAt:
+              metadata?.createdAt || entry.createdAt || entry.date || "",
+          };
+        })
       : getFilteredSessions();
     const rows = await loadSessionCsvDetails(filtered);
     const blob = new Blob(["\ufeff", buildSessionsCsv(rows)], {
@@ -1647,6 +1662,7 @@ function renderInsightsScore(data) {
 // Full-text search
 async function runSearch(q, generation = null) {
   const tracksCurrentSearch = typeof generation === "number";
+  if (tracksCurrentSearch && generation !== searchGeneration) return;
   const searchWrap = document.querySelector(".search-bar-wrap");
   if (searchWrap) searchWrap.classList.add("loading");
   try {

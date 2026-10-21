@@ -34,11 +34,19 @@ const code = ast.statements
   )
   .map((node) => node.getText(ast))
   .join("\n");
+const runSearchCode = ast.statements
+  .filter(
+    (node): node is ts.FunctionDeclaration =>
+      ts.isFunctionDeclaration(node) && node.name?.text === "runSearch"
+  )
+  .map((node) => node.getText(ast))
+  .join("\n");
 
 function context(overrides: Record<string, unknown> = {}) {
   return {
     Blob,
     encodeURIComponent,
+    clearTimeout,
     setTimeout: (callback: () => void) => callback(),
     ...overrides,
   };
@@ -173,6 +181,7 @@ describe("filtered session CSV export", () => {
         isSessionSnapshotValid: true,
         isSessionCsvExporting: false,
         searchResultSessions: [{ id: "full-text-hit" }],
+        sessions: [],
         getFilteredSessions: () => [{ id: "metadata-hit" }],
         document: {
           getElementById: (id: string) =>
@@ -190,6 +199,63 @@ describe("filtered session CSV export", () => {
       })
     );
     expect(fetched).toEqual(["/api/sessions/full-text-hit"]);
+  });
+
+  it("merges list metadata into full-text search exports", async () => {
+    const button = { disabled: false };
+    const status = { hidden: false, textContent: "" };
+    let exportedBlob: Blob | undefined;
+
+    await runInNewContext(
+      `${code}\nexportFilteredSessions()`,
+      context({
+        fetch: vi.fn(async () => ({ ok: false })),
+        isSearchActive: true,
+        isSearchPending: false,
+        isSessionListLoading: false,
+        isSessionSnapshotValid: true,
+        isSessionCsvExporting: false,
+        searchResultSessions: [
+          {
+            id: "full-text-hit",
+            source: "vscode",
+            date: "search-index-date",
+          },
+        ],
+        sessions: [
+          {
+            id: "full-text-hit",
+            source: "vscode",
+            createdAt: "2026-10-21T01:02:03.000Z",
+            status: "completed",
+          },
+        ],
+        getFilteredSessions: () => [],
+        document: {
+          getElementById: (id: string) =>
+            id === "exportSessionsCsvBtn" ? button : status,
+          createElement: () => ({
+            href: "",
+            download: "",
+            hidden: false,
+            click: vi.fn(),
+            remove: vi.fn(),
+          }),
+          body: { appendChild: vi.fn() },
+        },
+        URL: {
+          createObjectURL: (blob: Blob) => {
+            exportedBlob = blob;
+            return "blob:csv";
+          },
+          revokeObjectURL: vi.fn(),
+        },
+      })
+    );
+
+    expect(exportedBlob).toBeDefined();
+    const csv = await exportedBlob!.text();
+    expect(csv).toContain('"2026-10-21T01:02:03.000Z","vscode","","completed"');
   });
 
   it("leaves tool count blank when session details cannot be loaded", async () => {
@@ -354,6 +420,7 @@ describe("filtered session CSV export", () => {
       isSearchActive: true,
       isSearchPending: false,
       searchGeneration: 7,
+      searchDebounce: null,
       isSessionCsvExporting: false,
       sessions: [{ id: "stale" }],
       bookmarks: {},
@@ -394,6 +461,7 @@ describe("filtered session CSV export", () => {
       isSearchActive: true,
       isSearchPending: false,
       searchGeneration: 7,
+      searchDebounce: null,
       isSessionCsvExporting: false,
       sessions: [{ id: "stale" }],
       bookmarks: {},
@@ -430,5 +498,67 @@ describe("filtered session CSV export", () => {
 
     expect(vmContext.isSessionSnapshotValid).toBe(true);
     expect(button.disabled).toBe(false);
+  });
+
+  it("cancels a queued search before refresh reruns the active query", async () => {
+    const button = { disabled: false };
+    const queuedSearch = Symbol("queued-search");
+    const clearTimeout = vi.fn();
+    const vmContext: Record<string, unknown> = context({
+      clearTimeout,
+      sessionLoadGeneration: 0,
+      isSessionListLoading: false,
+      hasSuccessfulSessionLoad: false,
+      isSessionSnapshotValid: false,
+      isSearchActive: true,
+      isSearchPending: true,
+      searchGeneration: 7,
+      searchDebounce: queuedSearch,
+      isSessionCsvExporting: false,
+      sessions: [],
+      bookmarks: {},
+      searchInput: { value: "new query" },
+      sessionList: { innerHTML: "" },
+      fetch: vi.fn(async () => ({
+        json: async () => [{ id: "fresh", bookmarked: false }],
+      })),
+      loadBookmarks: vi.fn(async () => undefined),
+      updateDirFilter: vi.fn(),
+      renderSessions: vi.fn(),
+      escapeHtml: (value: string) => value,
+      document: { getElementById: () => button },
+    });
+    vmContext.runSearch = vi.fn(async () => {
+      vmContext.isSearchPending = false;
+      vmContext.isSessionSnapshotValid = true;
+    });
+
+    await runInNewContext(`${code}\nloadSessions()`, vmContext);
+
+    expect(clearTimeout).toHaveBeenCalledWith(queuedSearch);
+    expect(vmContext.searchDebounce).toBeNull();
+    expect(vmContext.runSearch).toHaveBeenCalledWith("new query", 8);
+  });
+
+  it("ignores a stale search before showing its loading indicator", async () => {
+    const add = vi.fn();
+    const remove = vi.fn();
+    const fetch = vi.fn();
+
+    await runInNewContext(
+      `${runSearchCode}\nrunSearch("old query", 6)`,
+      context({
+        searchGeneration: 7,
+        fetch,
+        document: {
+          querySelector: () => ({ classList: { add, remove } }),
+          getElementById: () => ({ disabled: false }),
+        },
+      })
+    );
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(add).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
   });
 });
