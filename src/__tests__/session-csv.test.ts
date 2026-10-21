@@ -17,6 +17,7 @@ const names = [
   "getSessionCsvModel",
   "buildSessionsCsv",
   "loadSessionCsvDetails",
+  "updateSessionCsvExportButton",
   "exportFilteredSessions",
 ];
 const code = ast.statements
@@ -110,6 +111,8 @@ describe("filtered session CSV export", () => {
       context({
         fetch,
         isSearchActive: false,
+        isSearchPending: false,
+        isSessionCsvExporting: false,
         searchResultSessions: [],
         getFilteredSessions: () => [{ id: "keep" }],
         document: {
@@ -143,6 +146,8 @@ describe("filtered session CSV export", () => {
           return { ok: false };
         }),
         isSearchActive: true,
+        isSearchPending: false,
+        isSessionCsvExporting: false,
         searchResultSessions: [{ id: "full-text-hit" }],
         getFilteredSessions: () => [{ id: "metadata-hit" }],
         document: {
@@ -161,5 +166,48 @@ describe("filtered session CSV export", () => {
       })
     );
     expect(fetched).toEqual(["/api/sessions/full-text-hit"]);
+  });
+
+  it("leaves tool count blank when session details cannot be loaded", async () => {
+    const rows = await runInNewContext(
+      `${code}\nloadSessionCsvDetails([{ id: "gone", source: "vscode" }])`,
+      context({ fetch: vi.fn(async () => ({ ok: false })) })
+    );
+    const csv = runInNewContext(
+      `${code}\nbuildSessionsCsv(rows)`,
+      context({ rows })
+    );
+
+    expect(csv).toContain('"vscode","","","","",""');
+  });
+
+  it("does not export while full-text search results are pending", async () => {
+    const fetch = vi.fn();
+    const createObjectURL = vi.fn();
+    const button = { disabled: false };
+    const status = { hidden: true, textContent: "" };
+
+    await runInNewContext(
+      `${code}\nexportFilteredSessions()`,
+      context({
+        fetch,
+        isSearchActive: false,
+        isSearchPending: true,
+        isSessionCsvExporting: false,
+        searchResultSessions: [],
+        getFilteredSessions: () => [{ id: "metadata-only" }],
+        document: {
+          getElementById: (id: string) =>
+            id === "exportSessionsCsvBtn" ? button : status,
+        },
+        URL: { createObjectURL, revokeObjectURL: vi.fn() },
+      })
+    );
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(button.disabled).toBe(true);
+    expect(status.hidden).toBe(false);
+    expect(status.textContent).toContain("Wait for search results");
   });
 });

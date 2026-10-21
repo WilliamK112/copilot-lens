@@ -4,7 +4,10 @@ let analytics = null;
 let charts = {};
 let searchDebounce = null;
 let isSearchActive = false;
+let isSearchPending = false;
+let searchGeneration = 0;
 let searchResultSessions = [];
+let isSessionCsvExporting = false;
 let analyticsSource = "all";
 let bookmarks = {}; // sessionId → { tags, note, createdAt }
 let allTags = []; // known tag values for auto-suggest
@@ -1187,7 +1190,11 @@ function getSessionCsvModel(session) {
         /Model changed to:\s*([^\s.]+(?:[-.][^\s.]+)*)/i
       );
       if (match) model = match[1];
-    } else if (event.type === "assistant.message" && event.data?.model) {
+    } else if (
+      (event.type === "assistant.turn_start" ||
+        event.type === "assistant.message") &&
+      event.data?.model
+    ) {
       model = event.data.model;
     }
   }
@@ -1208,13 +1215,14 @@ function buildSessionsCsv(rows) {
     const duration = Number.isFinite(session.duration)
       ? (session.duration / 60_000).toFixed(2)
       : "";
-    const toolCount = Number.isFinite(
-      session.eventCounts?.["tool.execution_start"]
-    )
-      ? session.eventCounts["tool.execution_start"]
-      : (session.events || []).filter(
-          (event) => event.type === "tool.execution_start"
-        ).length;
+    let toolCount = "";
+    if (Number.isFinite(session.eventCounts?.["tool.execution_start"])) {
+      toolCount = session.eventCounts["tool.execution_start"];
+    } else if (Array.isArray(session.events)) {
+      toolCount = session.events.filter(
+        (event) => event.type === "tool.execution_start"
+      ).length;
+    }
     return [
       session.createdAt || "",
       session.source || "",
@@ -1255,12 +1263,28 @@ async function loadSessionCsvDetails(filtered) {
   return rows;
 }
 
-async function exportFilteredSessions() {
+function updateSessionCsvExportButton() {
   const button = document.getElementById("exportSessionsCsvBtn");
+  button.disabled = isSearchPending || isSessionCsvExporting;
+}
+
+function setSearchPending(pending) {
+  isSearchPending = pending;
+  updateSessionCsvExportButton();
+}
+
+async function exportFilteredSessions() {
   const status = document.getElementById("sessionExportStatus");
-  button.disabled = true;
   status.hidden = true;
   status.textContent = "";
+  if (isSearchPending) {
+    status.textContent = "Wait for search results before exporting.";
+    status.hidden = false;
+    updateSessionCsvExportButton();
+    return;
+  }
+  isSessionCsvExporting = true;
+  updateSessionCsvExportButton();
   try {
     const filtered = isSearchActive
       ? searchResultSessions
@@ -1285,7 +1309,8 @@ async function exportFilteredSessions() {
     status.textContent = `CSV export failed: ${error.message}`;
     status.hidden = false;
   } finally {
-    button.disabled = false;
+    isSessionCsvExporting = false;
+    updateSessionCsvExportButton();
   }
 }
 
@@ -1307,11 +1332,13 @@ function updateSearchKbd() {
 // Search input (full-text search with debounce)
 searchInput.addEventListener("input", () => {
   clearTimeout(searchDebounce);
+  const generation = ++searchGeneration;
   const q = searchInput.value.trim();
   searchClear.style.display = q ? "inline" : "none";
   updateSearchKbd();
+  setSearchPending(!!q);
   searchDebounce = setTimeout(() => {
-    if (q) runSearch(q);
+    if (q) runSearch(q, generation);
     else clearSearch();
   }, 300);
 });
@@ -1320,6 +1347,8 @@ searchInput.addEventListener("focus", updateSearchKbd);
 searchInput.addEventListener("blur", updateSearchKbd);
 
 searchClear.addEventListener("click", () => {
+  clearTimeout(searchDebounce);
+  searchGeneration++;
   searchInput.value = "";
   searchClear.style.display = "none";
   updateSearchKbd();
@@ -1538,7 +1567,8 @@ function renderInsightsScore(data) {
 }
 
 // Full-text search
-async function runSearch(q) {
+async function runSearch(q, generation = null) {
+  const tracksCurrentSearch = typeof generation === "number";
   const searchWrap = document.querySelector(".search-bar-wrap");
   if (searchWrap) searchWrap.classList.add("loading");
   try {
@@ -1546,22 +1576,30 @@ async function runSearch(q) {
       `/api/search?q=${encodeURIComponent(q)}&source=all&limit=20&includeTotal=true`
     );
     const page = await res.json();
+    if (tracksCurrentSearch && generation !== searchGeneration) return;
     if (!res.ok) {
       throw new Error(page.error || `Search request failed (${res.status})`);
     }
     isSearchActive = true;
     renderSearchResults(page.results, page.totalMatches);
   } catch (err) {
+    if (tracksCurrentSearch && generation !== searchGeneration) return;
     isSearchActive = true;
     searchResultSessions = [];
     sessionCount.textContent = "Search failed";
     sessionList.innerHTML = `<div class="error-message">Search failed: ${escapeHtml(err.message)}</div>`;
   } finally {
-    if (searchWrap) searchWrap.classList.remove("loading");
+    if (!tracksCurrentSearch || generation === searchGeneration) {
+      if (searchWrap) searchWrap.classList.remove("loading");
+      if (typeof setSearchPending === "function") setSearchPending(false);
+    }
   }
 }
 
 function clearSearch() {
+  setSearchPending(false);
+  const searchWrap = document.querySelector(".search-bar-wrap");
+  if (searchWrap) searchWrap.classList.remove("loading");
   isSearchActive = false;
   searchResultSessions = [];
   renderSessions();
