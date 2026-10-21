@@ -150,6 +150,21 @@ describe("requestsToEvents", () => {
     expect(assistantMsg!.data.content).toBe("Here is the explanation");
   });
 
+  it("preserves the normalized model id on assistant messages", () => {
+    const events = requestsToEvents([
+      {
+        requestId: "r3-model",
+        timestamp: 1700000000000,
+        modelId: "copilot/claude-sonnet-4-6",
+        message: { text: "Explain this" },
+        response: [{ value: "Here is the explanation" }],
+      },
+    ]);
+
+    const assistantMsg = events.find((e) => e.type === "assistant.message");
+    expect(assistantMsg!.data.model).toBe("claude-sonnet-4-6");
+  });
+
   it("includes result text in assistant message", () => {
     const events = requestsToEvents([
       {
