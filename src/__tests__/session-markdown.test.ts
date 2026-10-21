@@ -34,6 +34,7 @@ function setup(click = vi.fn()) {
   const button = { addEventListener: vi.fn(), disabled: false };
   const detailContent = {
     innerHTML: "",
+    appendChild: vi.fn(),
     querySelectorAll: vi.fn(() => []),
     querySelector: vi.fn((selector: string) =>
       selector === "#exportMarkdownBtn" ? button : status
@@ -58,6 +59,8 @@ function setup(click = vi.fn()) {
     fetch,
     document: { createElement: vi.fn(() => link), body: { appendChild } },
     detailContent,
+    buildBookmarkSection: vi.fn(() => ({})),
+    attachBookmarkSectionListeners: vi.fn(),
   };
   const functions = runInNewContext(
     `${code}\n({buildSessionMarkdown, downloadSessionMarkdown, renderDetail})`,
