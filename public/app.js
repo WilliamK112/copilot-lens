@@ -1150,6 +1150,14 @@ async function loadSessions() {
       const activeSearchGeneration = ++searchGeneration;
       setSearchPending(true);
       await runSearch(activeQuery, activeSearchGeneration);
+    } else if (isSearchActive) {
+      // The input was cleared while the debounced clearSearch() callback was
+      // still queued. Clear the old results synchronously so renderSessions()
+      // cannot keep the stale search snapshot visible or exportable.
+      clearTimeout(searchDebounce);
+      searchDebounce = null;
+      searchGeneration++;
+      clearSearch();
     } else {
       renderSessions();
       setSessionSnapshotValid(true);

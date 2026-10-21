@@ -540,6 +540,52 @@ describe("filtered session CSV export", () => {
     expect(vmContext.runSearch).toHaveBeenCalledWith("new query", 8);
   });
 
+  it("clears stale search results when refresh wins the empty-query debounce", async () => {
+    const button = { disabled: false };
+    const queuedClear = Symbol("queued-clear");
+    const clearTimeout = vi.fn();
+    const renderSessions = vi.fn();
+    const vmContext: Record<string, unknown> = context({
+      clearTimeout,
+      sessionLoadGeneration: 0,
+      isSessionListLoading: false,
+      hasSuccessfulSessionLoad: false,
+      isSessionSnapshotValid: false,
+      isSearchActive: true,
+      isSearchPending: false,
+      searchGeneration: 8,
+      searchDebounce: queuedClear,
+      isSessionCsvExporting: false,
+      searchResultSessions: [{ id: "stale-search-hit" }],
+      sessions: [{ id: "stale" }],
+      bookmarks: {},
+      searchInput: { value: "" },
+      sessionList: { innerHTML: "" },
+      fetch: vi.fn(async () => ({
+        json: async () => [{ id: "fresh", bookmarked: false }],
+      })),
+      loadBookmarks: vi.fn(async () => undefined),
+      updateDirFilter: vi.fn(),
+      renderSessions,
+      escapeHtml: (value: string) => value,
+      document: {
+        getElementById: () => button,
+        querySelector: () => null,
+      },
+    });
+
+    await runInNewContext(`${code}\nloadSessions()`, vmContext);
+
+    expect(clearTimeout).toHaveBeenCalledWith(queuedClear);
+    expect(vmContext.searchDebounce).toBeNull();
+    expect(vmContext.searchGeneration).toBe(9);
+    expect(vmContext.isSearchActive).toBe(false);
+    expect(vmContext.searchResultSessions).toEqual([]);
+    expect(renderSessions).toHaveBeenCalledOnce();
+    expect(vmContext.isSessionSnapshotValid).toBe(true);
+    expect(button.disabled).toBe(false);
+  });
+
   it("ignores a stale search before showing its loading indicator", async () => {
     const add = vi.fn();
     const remove = vi.fn();
