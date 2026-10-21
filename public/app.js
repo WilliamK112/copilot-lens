@@ -1161,6 +1161,16 @@ async function loadSessions() {
   } finally {
     if (generation === sessionLoadGeneration) {
       isSessionListLoading = false;
+      // Clearing an active search while its post-load refresh is still in
+      // flight renders the successfully loaded unfiltered list, but
+      // clearSearch() cannot validate it until this loading flag is cleared.
+      if (
+        hasSuccessfulSessionLoad &&
+        !isSearchActive &&
+        !searchInput.value.trim()
+      ) {
+        isSessionSnapshotValid = true;
+      }
       updateSessionCsvExportButton();
     }
   }

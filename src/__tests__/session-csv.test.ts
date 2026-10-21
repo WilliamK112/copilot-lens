@@ -22,6 +22,7 @@ const names = [
   "updateSessionCsvExportButton",
   "setSessionSnapshotValid",
   "setSearchPending",
+  "clearSearch",
   "exportFilteredSessions",
 ];
 const code = ast.statements
@@ -378,6 +379,56 @@ describe("filtered session CSV export", () => {
     expect(runSearch).toHaveBeenCalledWith("message-only hit", 8);
     expect(renderSessions).not.toHaveBeenCalled();
     expect(updateDirFilter).toHaveBeenCalledOnce();
+    expect(button.disabled).toBe(false);
+  });
+
+  it("restores the unfiltered snapshot when a refreshed search is cleared", async () => {
+    const button = { disabled: false };
+    const searchInput = { value: "message-only hit" };
+    let finishSearch: (() => void) | undefined;
+    const vmContext: Record<string, unknown> = context({
+      sessionLoadGeneration: 0,
+      isSessionListLoading: false,
+      hasSuccessfulSessionLoad: false,
+      isSessionSnapshotValid: false,
+      isSearchActive: true,
+      isSearchPending: false,
+      searchGeneration: 7,
+      isSessionCsvExporting: false,
+      sessions: [{ id: "stale" }],
+      bookmarks: {},
+      searchInput,
+      sessionList: { innerHTML: "" },
+      fetch: vi.fn(async () => ({
+        json: async () => [{ id: "fresh", bookmarked: false }],
+      })),
+      loadBookmarks: vi.fn(async () => undefined),
+      updateDirFilter: vi.fn(),
+      renderSessions: vi.fn(),
+      escapeHtml: (value: string) => value,
+      document: {
+        getElementById: () => button,
+        querySelector: () => null,
+      },
+    });
+    vmContext.runSearch = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishSearch = resolve;
+        })
+    );
+
+    const load = runInNewContext(`${code}\nloadSessions()`, vmContext);
+    await vi.waitFor(() => expect(vmContext.runSearch).toHaveBeenCalled());
+
+    searchInput.value = "";
+    runInNewContext("clearSearch()", vmContext);
+    expect(vmContext.isSessionSnapshotValid).toBe(false);
+
+    finishSearch?.();
+    await load;
+
+    expect(vmContext.isSessionSnapshotValid).toBe(true);
     expect(button.disabled).toBe(false);
   });
 });
