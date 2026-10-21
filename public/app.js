@@ -7,6 +7,8 @@ let isSearchActive = false;
 let isSearchPending = false;
 let searchGeneration = 0;
 let searchResultSessions = [];
+let isSessionListLoading = false;
+let sessionLoadGeneration = 0;
 let isSessionCsvExporting = false;
 let analyticsSource = "all";
 let bookmarks = {}; // sessionId → { tags, note, createdAt }
@@ -1100,6 +1102,9 @@ function attachBookmarkSectionListeners(sessionId) {
 
 // Data loading
 async function loadSessions() {
+  const generation = ++sessionLoadGeneration;
+  isSessionListLoading = true;
+  updateSessionCsvExportButton();
   // Show skeleton while loading
   sessionList.innerHTML = Array.from(
     { length: 4 },
@@ -1116,7 +1121,9 @@ async function loadSessions() {
       fetch("/api/sessions"),
       loadBookmarks(),
     ]);
-    sessions = await sessRes.json();
+    const loadedSessions = await sessRes.json();
+    if (generation !== sessionLoadGeneration) return;
+    sessions = loadedSessions;
     // Merge bookmark flags already present in session list response
     for (const s of sessions) {
       if (s.bookmarked && !bookmarks[s.id]) {
@@ -1131,7 +1138,14 @@ async function loadSessions() {
     updateDirFilter();
     renderSessions();
   } catch (err) {
-    sessionList.innerHTML = `<div class="error-message">Failed to load sessions: ${escapeHtml(err.message)}</div>`;
+    if (generation === sessionLoadGeneration) {
+      sessionList.innerHTML = `<div class="error-message">Failed to load sessions: ${escapeHtml(err.message)}</div>`;
+    }
+  } finally {
+    if (generation === sessionLoadGeneration) {
+      isSessionListLoading = false;
+      updateSessionCsvExportButton();
+    }
   }
 }
 
@@ -1171,7 +1185,7 @@ function csvCell(value) {
   const text = value == null ? "" : String(value);
   // Spreadsheet apps may execute cells beginning with these characters as
   // formulas. Keep user-controlled titles and directories inert on open.
-  const safe = /^[=+\-@]/.test(text) ? `'${text}` : text;
+  const safe = /^\s*[=+\-@]/.test(text) ? `'${text}` : text;
   return `"${safe.replace(/"/g, '""')}"`;
 }
 
@@ -1265,7 +1279,8 @@ async function loadSessionCsvDetails(filtered) {
 
 function updateSessionCsvExportButton() {
   const button = document.getElementById("exportSessionsCsvBtn");
-  button.disabled = isSearchPending || isSessionCsvExporting;
+  button.disabled =
+    isSessionListLoading || isSearchPending || isSessionCsvExporting;
 }
 
 function setSearchPending(pending) {
@@ -1277,8 +1292,10 @@ async function exportFilteredSessions() {
   const status = document.getElementById("sessionExportStatus");
   status.hidden = true;
   status.textContent = "";
-  if (isSearchPending) {
-    status.textContent = "Wait for search results before exporting.";
+  if (isSessionListLoading || isSearchPending) {
+    status.textContent = isSessionListLoading
+      ? "Wait for sessions to finish loading before exporting."
+      : "Wait for search results before exporting.";
     status.hidden = false;
     updateSessionCsvExportButton();
     return;

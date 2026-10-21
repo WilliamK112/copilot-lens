@@ -84,6 +84,21 @@ describe("filtered session CSV export", () => {
     );
   });
 
+  it("neutralizes formulas after leading control whitespace", () => {
+    const csv = runInNewContext(
+      `${code}\nbuildSessionsCsv([session])`,
+      context({
+        session: {
+          source: "cli",
+          cwd: '\t\r=HYPERLINK("https://example.test")',
+          events: [],
+        },
+      })
+    );
+
+    expect(csv).toContain('"\'\t\r=HYPERLINK(""https://example.test"")"');
+  });
+
   it("downloads only the filtered rows and revokes the object URL", async () => {
     const click = vi.fn();
     const remove = vi.fn();
@@ -112,6 +127,7 @@ describe("filtered session CSV export", () => {
         fetch,
         isSearchActive: false,
         isSearchPending: false,
+        isSessionListLoading: false,
         isSessionCsvExporting: false,
         searchResultSessions: [],
         getFilteredSessions: () => [{ id: "keep" }],
@@ -147,6 +163,7 @@ describe("filtered session CSV export", () => {
         }),
         isSearchActive: true,
         isSearchPending: false,
+        isSessionListLoading: false,
         isSessionCsvExporting: false,
         searchResultSessions: [{ id: "full-text-hit" }],
         getFilteredSessions: () => [{ id: "metadata-hit" }],
@@ -193,6 +210,7 @@ describe("filtered session CSV export", () => {
         fetch,
         isSearchActive: false,
         isSearchPending: true,
+        isSessionListLoading: false,
         isSessionCsvExporting: false,
         searchResultSessions: [],
         getFilteredSessions: () => [{ id: "metadata-only" }],
@@ -209,5 +227,35 @@ describe("filtered session CSV export", () => {
     expect(button.disabled).toBe(true);
     expect(status.hidden).toBe(false);
     expect(status.textContent).toContain("Wait for search results");
+  });
+
+  it("does not export while the session list is loading", async () => {
+    const fetch = vi.fn();
+    const createObjectURL = vi.fn();
+    const button = { disabled: false };
+    const status = { hidden: true, textContent: "" };
+
+    await runInNewContext(
+      `${code}\nexportFilteredSessions()`,
+      context({
+        fetch,
+        isSearchActive: false,
+        isSearchPending: false,
+        isSessionListLoading: true,
+        isSessionCsvExporting: false,
+        searchResultSessions: [],
+        getFilteredSessions: () => [{ id: "stale" }],
+        document: {
+          getElementById: (id: string) =>
+            id === "exportSessionsCsvBtn" ? button : status,
+        },
+        URL: { createObjectURL, revokeObjectURL: vi.fn() },
+      })
+    );
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(button.disabled).toBe(true);
+    expect(status.textContent).toContain("sessions to finish loading");
   });
 });
