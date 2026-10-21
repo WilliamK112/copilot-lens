@@ -16,9 +16,11 @@ const names = [
   "loadSessions",
   "csvCell",
   "getSessionCsvModel",
+  "reduceSessionCsvRow",
   "buildSessionsCsv",
   "loadSessionCsvDetails",
   "updateSessionCsvExportButton",
+  "setSessionSnapshotValid",
   "setSearchPending",
   "exportFilteredSessions",
 ];
@@ -130,6 +132,7 @@ describe("filtered session CSV export", () => {
         isSearchActive: false,
         isSearchPending: false,
         isSessionListLoading: false,
+        isSessionSnapshotValid: true,
         isSessionCsvExporting: false,
         searchResultSessions: [],
         getFilteredSessions: () => [{ id: "keep" }],
@@ -166,6 +169,7 @@ describe("filtered session CSV export", () => {
         isSearchActive: true,
         isSearchPending: false,
         isSessionListLoading: false,
+        isSessionSnapshotValid: true,
         isSessionCsvExporting: false,
         searchResultSessions: [{ id: "full-text-hit" }],
         getFilteredSessions: () => [{ id: "metadata-hit" }],
@@ -200,6 +204,52 @@ describe("filtered session CSV export", () => {
     expect(csv).toContain('"vscode","","","","",""');
   });
 
+  it("retains metadata fallbacks and discards loaded event payloads", async () => {
+    const rows = await runInNewContext(
+      `${code}\nloadSessionCsvDetails([metadata])`,
+      context({
+        metadata: {
+          id: "vscode-session",
+          createdAt: "2026-10-21T01:02:03.000Z",
+          source: "vscode",
+          status: "completed",
+          cwd: "/workspace/project",
+        },
+        fetch: vi.fn(async () => ({
+          ok: true,
+          json: async () => ({
+            createdAt: "",
+            source: "vscode",
+            status: "completed",
+            duration: 60_000,
+            cwd: "",
+            events: [
+              {
+                type: "assistant.thinking",
+                data: { model: "claude-sonnet-4-6", content: "large" },
+              },
+              { type: "tool.execution_start", data: { tool: "bash" } },
+            ],
+          }),
+        })),
+      })
+    );
+
+    expect(rows).toEqual([
+      {
+        createdAt: "2026-10-21T01:02:03.000Z",
+        source: "vscode",
+        model: "claude-sonnet-4-6",
+        status: "completed",
+        duration: 60_000,
+        toolCount: 1,
+        cwd: "/workspace/project",
+      },
+    ]);
+    expect(rows[0]).not.toHaveProperty("events");
+    expect(rows[0]).not.toHaveProperty("eventCounts");
+  });
+
   it("does not export while full-text search results are pending", async () => {
     const fetch = vi.fn();
     const createObjectURL = vi.fn();
@@ -213,6 +263,7 @@ describe("filtered session CSV export", () => {
         isSearchActive: false,
         isSearchPending: true,
         isSessionListLoading: false,
+        isSessionSnapshotValid: false,
         isSessionCsvExporting: false,
         searchResultSessions: [],
         getFilteredSessions: () => [{ id: "metadata-only" }],
@@ -244,6 +295,7 @@ describe("filtered session CSV export", () => {
         isSearchActive: false,
         isSearchPending: false,
         isSessionListLoading: true,
+        isSessionSnapshotValid: false,
         isSessionCsvExporting: false,
         searchResultSessions: [],
         getFilteredSessions: () => [{ id: "stale" }],
@@ -261,6 +313,34 @@ describe("filtered session CSV export", () => {
     expect(status.textContent).toContain("sessions to finish loading");
   });
 
+  it("does not export after a list or search failure", async () => {
+    const fetch = vi.fn();
+    const button = { disabled: false };
+    const status = { hidden: true, textContent: "" };
+
+    await runInNewContext(
+      `${code}\nexportFilteredSessions()`,
+      context({
+        fetch,
+        isSearchActive: true,
+        isSearchPending: false,
+        isSessionListLoading: false,
+        isSessionSnapshotValid: false,
+        isSessionCsvExporting: false,
+        searchResultSessions: [],
+        getFilteredSessions: () => [{ id: "stale" }],
+        document: {
+          getElementById: (id: string) =>
+            id === "exportSessionsCsvBtn" ? button : status,
+        },
+      })
+    );
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(button.disabled).toBe(true);
+    expect(status.textContent).toContain("Reload sessions");
+  });
+
   it("refreshes active full-text results after reloading sessions", async () => {
     const button = { disabled: false };
     const renderSessions = vi.fn();
@@ -268,6 +348,8 @@ describe("filtered session CSV export", () => {
     const vmContext: Record<string, unknown> = context({
       sessionLoadGeneration: 0,
       isSessionListLoading: false,
+      hasSuccessfulSessionLoad: false,
+      isSessionSnapshotValid: false,
       isSearchActive: true,
       isSearchPending: false,
       searchGeneration: 7,
@@ -287,6 +369,7 @@ describe("filtered session CSV export", () => {
     });
     const runSearch = vi.fn(async () => {
       vmContext.isSearchPending = false;
+      vmContext.isSessionSnapshotValid = true;
     });
     vmContext.runSearch = runSearch;
 

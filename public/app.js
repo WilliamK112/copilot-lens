@@ -9,6 +9,8 @@ let searchGeneration = 0;
 let searchResultSessions = [];
 let isSessionListLoading = false;
 let sessionLoadGeneration = 0;
+let hasSuccessfulSessionLoad = false;
+let isSessionSnapshotValid = false;
 let isSessionCsvExporting = false;
 let analyticsSource = "all";
 let bookmarks = {}; // sessionId → { tags, note, createdAt }
@@ -1104,6 +1106,8 @@ function attachBookmarkSectionListeners(sessionId) {
 async function loadSessions() {
   const generation = ++sessionLoadGeneration;
   isSessionListLoading = true;
+  hasSuccessfulSessionLoad = false;
+  isSessionSnapshotValid = false;
   updateSessionCsvExportButton();
   // Show skeleton while loading
   sessionList.innerHTML = Array.from(
@@ -1124,6 +1128,7 @@ async function loadSessions() {
     const loadedSessions = await sessRes.json();
     if (generation !== sessionLoadGeneration) return;
     sessions = loadedSessions;
+    hasSuccessfulSessionLoad = true;
     // Merge bookmark flags already present in session list response
     for (const s of sessions) {
       if (s.bookmarked && !bookmarks[s.id]) {
@@ -1145,9 +1150,12 @@ async function loadSessions() {
       await runSearch(activeQuery, activeSearchGeneration);
     } else {
       renderSessions();
+      setSessionSnapshotValid(true);
     }
   } catch (err) {
     if (generation === sessionLoadGeneration) {
+      hasSuccessfulSessionLoad = false;
+      setSessionSnapshotValid(false);
       sessionList.innerHTML = `<div class="error-message">Failed to load sessions: ${escapeHtml(err.message)}</div>`;
     }
   } finally {
@@ -1213,15 +1221,39 @@ function getSessionCsvModel(session) {
         /Model changed to:\s*([^\s.]+(?:[-.][^\s.]+)*)/i
       );
       if (match) model = match[1];
-    } else if (
-      (event.type === "assistant.turn_start" ||
-        event.type === "assistant.message") &&
-      event.data?.model
-    ) {
+    }
+    if (event.data?.model) {
       model = event.data.model;
     }
   }
   return model;
+}
+
+function reduceSessionCsvRow(session = {}, fallback = {}) {
+  let toolCount = "";
+  if (Number.isFinite(session.toolCount)) {
+    toolCount = session.toolCount;
+  } else if (Number.isFinite(session.eventCounts?.["tool.execution_start"])) {
+    toolCount = session.eventCounts["tool.execution_start"];
+  } else if (Array.isArray(session.events)) {
+    toolCount = session.events.filter(
+      (event) => event.type === "tool.execution_start"
+    ).length;
+  }
+
+  return {
+    createdAt: session.createdAt || fallback.createdAt || "",
+    source: session.source || fallback.source || "",
+    model: getSessionCsvModel(session) || getSessionCsvModel(fallback),
+    status: session.status || fallback.status || "",
+    duration: Number.isFinite(session.duration)
+      ? session.duration
+      : Number.isFinite(fallback.duration)
+        ? fallback.duration
+        : null,
+    toolCount,
+    cwd: session.cwd || fallback.cwd || "",
+  };
 }
 
 function buildSessionsCsv(rows) {
@@ -1235,25 +1267,18 @@ function buildSessionsCsv(rows) {
     "Directory",
   ];
   const lines = rows.map((session) => {
-    const duration = Number.isFinite(session.duration)
-      ? (session.duration / 60_000).toFixed(2)
+    const row = reduceSessionCsvRow(session);
+    const duration = Number.isFinite(row.duration)
+      ? (row.duration / 60_000).toFixed(2)
       : "";
-    let toolCount = "";
-    if (Number.isFinite(session.eventCounts?.["tool.execution_start"])) {
-      toolCount = session.eventCounts["tool.execution_start"];
-    } else if (Array.isArray(session.events)) {
-      toolCount = session.events.filter(
-        (event) => event.type === "tool.execution_start"
-      ).length;
-    }
     return [
-      session.createdAt || "",
-      session.source || "",
-      getSessionCsvModel(session),
-      session.status || "",
+      row.createdAt,
+      row.source,
+      row.model,
+      row.status,
       duration,
-      toolCount,
-      session.cwd || "",
+      row.toolCount,
+      row.cwd,
     ]
       .map(csvCell)
       .join(",");
@@ -1274,9 +1299,10 @@ async function loadSessionCsvDetails(filtered) {
         const response = await fetch(
           `/api/sessions/${encodeURIComponent(session.id)}`
         );
-        rows[index] = response.ok ? await response.json() : session;
+        const detail = response.ok ? await response.json() : null;
+        rows[index] = reduceSessionCsvRow(detail || {}, session);
       } catch {
-        rows[index] = session;
+        rows[index] = reduceSessionCsvRow({}, session);
       }
     }
   }
@@ -1289,7 +1315,15 @@ async function loadSessionCsvDetails(filtered) {
 function updateSessionCsvExportButton() {
   const button = document.getElementById("exportSessionsCsvBtn");
   button.disabled =
-    isSessionListLoading || isSearchPending || isSessionCsvExporting;
+    isSessionListLoading ||
+    isSearchPending ||
+    !isSessionSnapshotValid ||
+    isSessionCsvExporting;
+}
+
+function setSessionSnapshotValid(valid) {
+  isSessionSnapshotValid = valid;
+  updateSessionCsvExportButton();
 }
 
 function setSearchPending(pending) {
@@ -1305,6 +1339,13 @@ async function exportFilteredSessions() {
     status.textContent = isSessionListLoading
       ? "Wait for sessions to finish loading before exporting."
       : "Wait for search results before exporting.";
+    status.hidden = false;
+    updateSessionCsvExportButton();
+    return;
+  }
+  if (!isSessionSnapshotValid) {
+    status.textContent =
+      "Reload sessions or clear the failed search before exporting.";
     status.hidden = false;
     updateSessionCsvExportButton();
     return;
@@ -1362,6 +1403,7 @@ searchInput.addEventListener("input", () => {
   const q = searchInput.value.trim();
   searchClear.style.display = q ? "inline" : "none";
   updateSearchKbd();
+  setSessionSnapshotValid(false);
   setSearchPending(!!q);
   searchDebounce = setTimeout(() => {
     if (q) runSearch(q, generation);
@@ -1608,10 +1650,16 @@ async function runSearch(q, generation = null) {
     }
     isSearchActive = true;
     renderSearchResults(page.results, page.totalMatches);
+    if (typeof setSessionSnapshotValid === "function") {
+      setSessionSnapshotValid(true);
+    }
   } catch (err) {
     if (tracksCurrentSearch && generation !== searchGeneration) return;
     isSearchActive = true;
     searchResultSessions = [];
+    if (typeof setSessionSnapshotValid === "function") {
+      setSessionSnapshotValid(false);
+    }
     sessionCount.textContent = "Search failed";
     sessionList.innerHTML = `<div class="error-message">Search failed: ${escapeHtml(err.message)}</div>`;
   } finally {
@@ -1629,6 +1677,7 @@ function clearSearch() {
   isSearchActive = false;
   searchResultSessions = [];
   renderSessions();
+  setSessionSnapshotValid(hasSuccessfulSessionLoad && !isSessionListLoading);
 }
 
 function renderSearchResults(results, totalMatches = results?.length ?? 0) {
